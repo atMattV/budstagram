@@ -1,30 +1,38 @@
-import './globals.css'
-import type { Metadata } from 'next'
-import Link from 'next/link'
+// src/app/layout.tsx
+import "./globals.css";
+import Link from "next/link";
 
-export const metadata: Metadata = {
-  title: 'Budstagram',
-  description: "Bud's photo feed",
-}
+export const metadata = {
+  title: "Budstagram",
+  description: "Built for Bud",
+};
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="en">
-      <body className="min-h-screen">
-        <header className="sticky top-0 z-50 border-b border-neutral-200/80 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:bg-neutral-900/60 dark:border-neutral-800">
-          <div className="mx-auto max-w-3xl px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="font-bold tracking-tight text-xl">Budstagram</Link>
-            <nav className="text-sm opacity-80 space-x-4">
+    <html lang="en" suppressHydrationWarning>
+      <body className="min-h-dvh bg-black text-neutral-100">
+        <header className="border-b border-neutral-800">
+          <nav className="mx-auto max-w-3xl px-4 h-12 flex items-center justify-between">
+            <div className="font-black">Budstagram</div>
+            <div className="flex items-center gap-6 text-sm">
               <Link href="/">Feed</Link>
-              <Link href="/admin">Admin</Link>
-            </nav>
-          </div>
+              <Link href="/admin" prefetch={false}>
+                Admin
+              </Link>
+            </div>
+          </nav>
         </header>
+
         <main className="mx-auto max-w-3xl px-4 py-6">{children}</main>
-        <footer className="mx-auto max-w-3xl px-4 py-10 text-center text-xs opacity-60">
-          © {new Date().getFullYear()} Budstagram · Built for Bud 🐾
+
+        <footer className="mx-auto max-w-3xl px-4 py-10 text-xs opacity-60 text-center">
+          © 2025 Budstagram · Built for Bud 🐾
         </footer>
       </body>
     </html>
-  )
+  );
 }
