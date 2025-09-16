@@ -48,36 +48,44 @@ export default function AdminPage() {
     setStatus('Uploading...');
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('caption', caption);
-
-      const res = await fetch('/api/upload', {
+      // 1) Ask server for a one-time upload URL
+      const presignRes = await fetch('/api/blob/upload-url', {
         method: 'POST',
-        body: formData,
-        credentials: 'same-origin',
         cache: 'no-store',
       });
+      if (!presignRes.ok) {
+        const t = await presignRes.text().catch(() => '');
+        throw new Error(`presign failed: ${presignRes.status} ${t}`);
+      }
+      const { uploadUrl } = await presignRes.json();
 
-      if (!res.ok) {
-        // Try JSON, then fall back to text
-        let bodyText = '';
-        try {
-          const ct = res.headers.get('content-type') || '';
-          if (ct.includes('application/json')) {
-            const j = await res.json();
-            bodyText = JSON.stringify(j);
-          } else {
-            bodyText = await res.text();
-          }
-        } catch {
-          bodyText = '(no body)';
-        }
-        const msg = `HTTP ${res.status} ${res.statusText} — ${bodyText}`;
-        setStatus('Failed to upload');
-        setDiag(msg);
-        setPosting(false);
-        return;
+      // 2) Upload the file directly to Blob storage
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'content-type': file.type || 'application/octet-stream',
+          'x-vercel-filename': file.name || 'upload',
+        },
+        body: file,
+      });
+      if (!uploadRes.ok) {
+        const t = await uploadRes.text().catch(() => '');
+        throw new Error(`blob upload failed: ${uploadRes.status} ${t}`);
+      }
+      const uploaded = await uploadRes.json(); // { url, pathname, contentType, ... }
+      const imageUrl: string = uploaded.url;
+
+      // 3) Create the DB record (and revalidate feed)
+      const createRes = await fetch('/api/revalidate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ caption, imageUrl }),
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
+      if (!createRes.ok) {
+        const t = await createRes.text().catch(() => '');
+        throw new Error(`create post failed: ${createRes.status} ${t}`);
       }
 
       setStatus('Post created!');
@@ -88,7 +96,7 @@ export default function AdminPage() {
       await loadPosts();
     } catch (err: any) {
       const msg = err?.message || String(err);
-      setStatus('Failed: network error');
+      setStatus('Failed');
       setDiag(msg);
     } finally {
       setPosting(false);
