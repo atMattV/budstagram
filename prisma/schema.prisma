@@ -15,7 +15,7 @@ model Post {
   imageUrl  String
   caption   String   @db.Text
   published Boolean  @default(true)
-  slug      String   @unique
+  slug      String?  @unique
 
   @@index([createdAt])
 }
