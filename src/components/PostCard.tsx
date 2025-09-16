@@ -9,16 +9,42 @@ type PostCardProps = {
     imageUrl: string
     caption: string
     createdAt: string
+    author?: string
+    verified?: boolean
   }
 }
 
 export default function PostCard({ post }: PostCardProps) {
   const [liked, setLiked] = useState(false)
+  const author = post.author ?? 'The Chisp'
+  const verified = post.verified ?? true
 
   return (
-    <article className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm">
-      {/* Image */}
-      <div className="relative aspect-square bg-neutral-100 dark:bg-neutral-800">
+    <article className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm mb-6">
+      {/* header like Instagram */}
+      <div className="flex items-center gap-3 p-3">
+        <div className="h-8 w-8 rounded-full bg-neutral-300 dark:bg-neutral-700 flex items-center justify-center text-xs font-bold">
+          {author.charAt(0).toUpperCase()}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold">{author}</span>
+          {verified && (
+            <svg
+              viewBox="0 0 24 24"
+              className="h-4 w-4"
+              aria-label="Verified"
+            >
+              <path
+                d="M12 2l2.09 4.24L18.9 7.1l-3.1 3.02.73 4.38L12 12.77 7.47 14.5l.73-4.38L5.1 7.1l4.81-.86L12 2z"
+                fill="#1DA1F2"
+              />
+              <path d="M10.5 12.3l-1.7-1.7-1.1 1.1 2.8 2.8 5.2-5.2-1.1-1.1z" fill="white" />
+            </svg>
+          )}
+        </div>
+      </div>
+
+      <div className="relative aspect-square">
         <Image
           src={post.imageUrl}
           alt={post.caption.slice(0, 100) || 'Budstagram post'}
@@ -28,23 +54,14 @@ export default function PostCard({ post }: PostCardProps) {
         />
       </div>
 
-      {/* Caption + Actions */}
       <div className="p-4 space-y-2">
-        <div className="text-xs text-neutral-500 dark:text-neutral-400">
+        <div className="text-xs opacity-60">
           {new Date(post.createdAt).toLocaleString()}
         </div>
-        <p className="text-sm leading-relaxed whitespace-pre-wrap">
-          {post.caption}
-        </p>
-
+        <p className="text-sm leading-relaxed whitespace-pre-wrap">{post.caption}</p>
         <button
           onClick={() => setLiked((v) => !v)}
-          className={`mt-2 inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 transition 
-            ${
-              liked
-                ? 'text-red-500 border-red-300 bg-red-50 dark:bg-red-900/20'
-                : 'border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800'
-            }`}
+          className="mt-1 inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
           aria-pressed={liked}
           type="button"
         >
