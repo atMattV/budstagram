@@ -8,7 +8,7 @@ export default async function Home() {
   const posts = await prisma.post.findMany({
     orderBy: { createdAt: 'desc' },
     take: PAGE_SIZE,
-    where: { published: true },
+    //where: { published: true },
   })
 
   const serialized = posts.map((post) => ({
