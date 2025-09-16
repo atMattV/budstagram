@@ -8,6 +8,9 @@ type Post = {
   imageUrl: string
   caption: string
   createdAt: string
+  likes: number
+  author?: string
+  verified?: boolean
 }
 
 type ApiResponse = {
@@ -23,16 +26,16 @@ export default function LoadMore({ initialCursor }: { initialCursor: string }) {
 
   async function load() {
     if (!cursor || loading) return
-
     try {
       setLoading(true)
       setError(null)
-
       const res = await fetch(`/api/posts?cursor=${encodeURIComponent(cursor)}`)
       if (!res.ok) throw new Error('Failed to load more posts')
-
       const data: ApiResponse = await res.json()
-      setItems((prev) => [...prev, ...data.items])
+      setItems((prev) => [
+        ...prev,
+        ...data.items.map((p) => ({ ...p, likes: p.likes ?? 0 })),
+      ])
       setCursor(data.nextCursor ?? null)
     } catch (err) {
       setError((err as Error).message)
