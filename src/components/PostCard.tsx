@@ -8,22 +8,29 @@ type PostCardProps = {
     id: string;
     imageUrl: string;
     caption: string;
-    createdAt: string; // serialized ISO from server
+    createdAt: string; // ISO from server
     author?: string;
     verified?: boolean;
-    likes: number;     // <-- make sure this is present
+    likes: number;
   };
 };
+
+function fmt(dtISO: string) {
+  const d = new Date(dtISO);
+  // No seconds. Locale-aware.
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(d);
+}
 
 export default function PostCard({ post }: PostCardProps) {
   const author = post.author ?? 'The Chisp';
   const verified = post.verified ?? true;
 
-  // optimistic like state
   const [likes, setLikes] = useState<number>(post.likes);
   const [liking, setLiking] = useState(false);
 
-  // prevent multiple likes from the same browser (very lightweight)
   const storageKey = useMemo(() => `liked:${post.id}`, [post.id]);
   const [alreadyLiked, setAlreadyLiked] = useState<boolean>(false);
 
@@ -34,19 +41,14 @@ export default function PostCard({ post }: PostCardProps) {
   async function handleLike() {
     if (liking || alreadyLiked) return;
     setLiking(true);
-
-    // optimistic update
     const prev = likes;
     setLikes(prev + 1);
-
     try {
       const res = await fetch(`/api/posts/${post.id}/like`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed to like');
-      // persist the “one like per browser” flag
       localStorage.setItem(storageKey, '1');
       setAlreadyLiked(true);
     } catch {
-      // rollback on error
       setLikes(prev);
     } finally {
       setLiking(false);
@@ -84,12 +86,14 @@ export default function PostCard({ post }: PostCardProps) {
 
       {/* body */}
       <div className="p-4 space-y-2">
-        <div className="text-xs opacity-60">{new Date(post.createdAt).toLocaleString()}</div>
+        <div className="text-xs opacity-60">{fmt(post.createdAt)}</div>
         <p className="text-sm leading-relaxed whitespace-pre-wrap">{post.caption}</p>
 
         {/* likes count + button */}
         <div className="flex items-center gap-3">
-          <span className="text-xs opacity-70">{likes} {likes === 1 ? 'like' : 'likes'}</span>
+          <span className="text-xs opacity-70">
+            {likes} {likes === 1 ? 'like' : 'likes'}
+          </span>
           <button
             onClick={handleLike}
             disabled={liking || alreadyLiked}
