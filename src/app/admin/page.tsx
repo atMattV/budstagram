@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { upload } from '@vercel/blob/client';
 
 type Post = {
   id: string;
@@ -48,34 +49,14 @@ export default function AdminPage() {
     setStatus('Uploading...');
 
     try {
-      // 1) Ask server for a one-time upload URL
-      const presignRes = await fetch('/api/blob/upload-url', {
-        method: 'POST',
-        cache: 'no-store',
+      // 1) Direct browser -> Vercel Blob (no server body limits)
+      const up = await upload(file.name || 'upload', file, {
+        access: 'public',
+        contentType: file.type || 'application/octet-stream',
       });
-      if (!presignRes.ok) {
-        const t = await presignRes.text().catch(() => '');
-        throw new Error(`presign failed: ${presignRes.status} ${t}`);
-      }
-      const { uploadUrl } = await presignRes.json();
+      const imageUrl = up.url;
 
-      // 2) Upload the file directly to Blob storage
-      const uploadRes = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-          'content-type': file.type || 'application/octet-stream',
-          'x-vercel-filename': file.name || 'upload',
-        },
-        body: file,
-      });
-      if (!uploadRes.ok) {
-        const t = await uploadRes.text().catch(() => '');
-        throw new Error(`blob upload failed: ${uploadRes.status} ${t}`);
-      }
-      const uploaded = await uploadRes.json(); // { url, pathname, contentType, ... }
-      const imageUrl: string = uploaded.url;
-
-      // 3) Create the DB record (and revalidate feed)
+      // 2) Create DB record (and revalidate feed)
       const createRes = await fetch('/api/revalidate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
