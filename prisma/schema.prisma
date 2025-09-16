@@ -1,0 +1,19 @@
+// Set DATABASE_URL in .env (Neon recommended)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now()) @index
+  imageUrl  String
+  caption   String   @db.Text
+  published Boolean  @default(true)
+  slug      String   @unique
+}
