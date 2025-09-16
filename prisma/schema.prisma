@@ -11,9 +11,11 @@ datasource db {
 
 model Post {
   id        String   @id @default(cuid())
-  createdAt DateTime @default(now()) @index
+  createdAt DateTime @default(now())
   imageUrl  String
   caption   String   @db.Text
   published Boolean  @default(true)
   slug      String   @unique
+
+  @@index([createdAt])
 }
