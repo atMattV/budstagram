@@ -9,11 +9,19 @@ export default async function Home() {
     orderBy: { createdAt: 'desc' },
     take: PAGE_SIZE,
     where: { published: true },
-    // no select => includes likes automatically
+    select: {
+      id: true,
+      imageUrl: true,
+      caption: true,
+      createdAt: true,
+      likes: true,
+      author: true,
+      verified: true,
+    },
   })
 
   const serialized = posts.map((post) => ({
-    ...post,                       // includes likes
+    ...post,
     createdAt: post.createdAt.toISOString(),
   }))
 
