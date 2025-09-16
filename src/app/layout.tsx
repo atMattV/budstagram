@@ -6,7 +6,7 @@ import type { Metadata } from 'next';
 export const metadata: Metadata = {
   title: 'Budstagram',
   description: 'A tiny photo feed for Bud.',
-  manifest: '/site.webmanifest',
+  manifest: '/site.webmanifest', // you also have /manifest.ts; both can coexist
   themeColor: '#0b0b0b',
   icons: {
     icon: [
@@ -47,15 +47,29 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           © {new Date().getFullYear()} Budstagram · Built for Bud 🐾
         </footer>
 
-        {/* PWA: register the service worker */}
+        {/* Robust PWA SW registration */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
-if ('serviceWorker' in navigator) {
+(function(){
+  if (!('serviceWorker' in navigator)) return;
+  const SW_URL = '/sw.js';
+  let refreshed = false;
+
   window.addEventListener('load', function () {
-    navigator.serviceWorker.register('/sw.js').catch(function(){});
+    navigator.serviceWorker.register(SW_URL).then(function(reg) {
+      // Always try to pull the latest SW
+      if (reg.update) reg.update();
+
+      // Reload once when a new SW takes control (so standalone app sees fresh code)
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (refreshed) return;
+        refreshed = true;
+        location.reload();
+      });
+    }).catch(function(){});
   });
-}
+})();
 `,
           }}
         />
