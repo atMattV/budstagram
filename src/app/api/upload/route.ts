@@ -7,6 +7,7 @@ export async function POST(req: Request) {
   const caption = form.get('caption') as string
   const imageUrl = form.get('imageUrl') as string
 
+  // auto-generate slug
   const slug = caption
     ? caption.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30) + '-' + Date.now()
     : 'post-' + Date.now()
