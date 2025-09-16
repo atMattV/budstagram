@@ -14,10 +14,8 @@ model Post {
   imageUrl  String
   caption   String   @db.Text
   published Boolean  @default(true)
-
-  // NEW
   author    String   @default("The Chisp")
   verified  Boolean  @default(true)
-
+  likes     Int      @default(0)
   @@index([createdAt])
 }
