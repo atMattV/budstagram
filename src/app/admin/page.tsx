@@ -10,12 +10,18 @@ type Post = {
   likes: number;
 };
 
+function fmt(dtISO: string) {
+  const d = new Date(dtISO);
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(d);
+}
+
 export default function AdminPage() {
   const [caption, setCaption] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const [posting, setPosting] = useState(false);
+  const [diag, setDiag] = useState<string | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [posting, setPosting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function loadPosts() {
@@ -32,6 +38,7 @@ export default function AdminPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setDiag(null);
     if (!file) {
       setStatus('Please select a file first');
       return;
@@ -48,29 +55,41 @@ export default function AdminPage() {
       const res = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
-        // Make intent explicit in standalone/PWA:
         credentials: 'same-origin',
         cache: 'no-store',
       });
 
       if (!res.ok) {
-        let msg = 'Unknown error';
+        // Try JSON, then fall back to text
+        let bodyText = '';
         try {
-          const j = await res.json();
-          msg = j?.error || msg;
-        } catch {}
-        setStatus(`Failed: ${msg}`);
+          const ct = res.headers.get('content-type') || '';
+          if (ct.includes('application/json')) {
+            const j = await res.json();
+            bodyText = JSON.stringify(j);
+          } else {
+            bodyText = await res.text();
+          }
+        } catch {
+          bodyText = '(no body)';
+        }
+        const msg = `HTTP ${res.status} ${res.statusText} — ${bodyText}`;
+        setStatus('Failed to upload');
+        setDiag(msg);
         setPosting(false);
         return;
       }
 
       setStatus('Post created!');
+      setDiag(null);
       setCaption('');
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       await loadPosts();
     } catch (err: any) {
-      setStatus(`Failed: ${err?.message || 'network error'}`);
+      const msg = err?.message || String(err);
+      setStatus('Failed: network error');
+      setDiag(msg);
     } finally {
       setPosting(false);
     }
@@ -117,6 +136,11 @@ export default function AdminPage() {
           </button>
         </form>
         {status && <p className="mt-4 text-sm">{status}</p>}
+        {diag && (
+          <pre className="mt-2 whitespace-pre-wrap break-words text-xs opacity-70 border border-neutral-800 rounded p-2">
+            {diag}
+          </pre>
+        )}
       </section>
 
       <section>
@@ -131,10 +155,8 @@ export default function AdminPage() {
               />
               <p className="text-sm">{post.caption}</p>
               <div className="flex justify-between items-center text-xs opacity-70">
-                <span>{new Date(post.createdAt).toLocaleString()}</span>
-                <span>
-                  {post.likes} {post.likes === 1 ? 'like' : 'likes'}
-                </span>
+                <span>{fmt(post.createdAt)}</span>
+                <span>{post.likes} {post.likes === 1 ? 'like' : 'likes'}</span>
               </div>
               <button
                 onClick={() => handleDelete(post.id)}
