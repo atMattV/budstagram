@@ -1,10 +1,19 @@
 import { NextResponse } from 'next/server';
-import { createUploadURL } from '@vercel/blob';
+import { generateUploadURL } from '@vercel/blob';
 
-// Tiny JSON response, safe on Edge
 export const runtime = 'edge';
+export const dynamic = 'force-dynamic';
 
 export async function POST() {
-  const uploadUrl = await createUploadURL({ access: 'public' });
-  return NextResponse.json({ uploadUrl }, { headers: { 'Cache-Control': 'no-store' } });
+  // Presign a one-time, direct-upload URL
+  const signed: any = await generateUploadURL({ access: 'public' });
+
+  // SDK versions differ on return shape; normalize to { uploadUrl }
+  const uploadUrl =
+    typeof signed === 'string' ? signed : signed?.url ?? signed?.uploadUrl;
+
+  return NextResponse.json(
+    { uploadUrl },
+    { headers: { 'Cache-Control': 'no-store' } }
+  );
 }
