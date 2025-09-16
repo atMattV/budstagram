@@ -8,7 +8,7 @@ export default async function Home() {
   const posts = await prisma.post.findMany({
     orderBy: { createdAt: 'desc' },
     take: PAGE_SIZE,
-    //where: { published: true },
+    where: { published: true },
   })
 
   const serialized = posts.map((post) => ({
@@ -20,13 +20,13 @@ export default async function Home() {
     serialized.length === PAGE_SIZE ? serialized[serialized.length - 1].createdAt : null
 
   return (
-    <div>
+    <main className="max-w-md mx-auto mt-6 px-4">
       <div className="grid gap-6">
         {serialized.map((p) => (
           <PostCard key={p.id} post={p} />
         ))}
       </div>
       {nextCursor && <LoadMore initialCursor={nextCursor} />}
-    </div>
+    </main>
   )
 }
