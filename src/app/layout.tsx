@@ -3,8 +3,16 @@ import "./globals.css";
 import Link from "next/link";
 
 export const metadata = {
-  title: "Budstagram",
-  description: "Built for Bud",
+  title: 'Budstagram',
+  description: 'A tiny Instagram-style feed for Bud.',
+  themeColor: '#111111',
+  icons: {
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192' },
+      { url: '/icons/icon-512.png', sizes: '512x512' },
+    ],
+    apple: [{ url: '/icons/apple-touch-icon.png', sizes: '180x180' }],
+  },
 };
 
 export default function RootLayout({
