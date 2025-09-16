@@ -20,8 +20,8 @@ export default function AdminPage() {
   async function loadPosts() {
     const res = await fetch('/api/posts?all=1')
     if (res.ok) {
-      const data: Post[] = await res.json()
-      setPosts(data)
+      const { items } = await res.json()  // ✅ unwrap items
+      setPosts(items)
     }
   }
 
