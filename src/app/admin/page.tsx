@@ -16,27 +16,13 @@ export default function AdminPage() {
 
     setStatus('Uploading...')
 
-    // Upload to Vercel Blob
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('caption', caption)
 
-    const uploadRes = await fetch('/api/upload', {
+    const res = await fetch('/api/upload', {
       method: 'POST',
       body: formData,
-    })
-
-    if (!uploadRes.ok) {
-      setStatus('Upload failed')
-      return
-    }
-
-    const { url } = await uploadRes.json()
-
-    // Save post to DB
-    const res = await fetch('/api/revalidate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ caption, imageUrl: url }),
     })
 
     if (res.ok) {
@@ -44,7 +30,8 @@ export default function AdminPage() {
       setCaption('')
       setFile(null)
     } else {
-      setStatus('Failed to save post')
+      const { error } = await res.json().catch(() => ({ error: 'Unknown error' }))
+      setStatus(`Failed: ${error}`)
     }
   }
 
