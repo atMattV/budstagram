@@ -1,3 +1,4 @@
+// src/components/PostCard.tsx
 'use client'
 
 import Image from 'next/image'
@@ -9,46 +10,39 @@ type PostCardProps = {
     imageUrl: string
     caption: string
     createdAt: string
+    likes: number
     author?: string
     verified?: boolean
-    likes: number
   }
 }
 
 export default function PostCard({ post }: PostCardProps) {
   const [liked, setLiked] = useState(false)
-  const [likes, setLikes] = useState(post.likes ?? 0)
-  const [busy, setBusy] = useState(false)
+  const [likes, setLikes] = useState<number>(post.likes ?? 0)
 
   const author = post.author ?? 'The Chisp'
   const verified = post.verified ?? true
 
-  async function likeOnce() {
-    // prevent double-taps from spamming
-    if (liked || busy) return
+  async function handleLike() {
+    if (liked) return
     setLiked(true)
-    setBusy(true)
-    // optimistic update
-    setLikes((n) => n + 1)
+    setLikes((n) => n + 1) // optimistic
 
     try {
       const res = await fetch(`/api/posts/${post.id}/like`, { method: 'POST' })
-      if (!res.ok) throw new Error('like failed')
-      const data: { likes: number } = await res.json()
-      // trust server count
-      setLikes(data.likes)
+      if (!res.ok) throw new Error('Failed to like')
+      const data = await res.json()
+      if (typeof data.likes === 'number') setLikes(data.likes)
     } catch {
-      // rollback if it failed
+      // rollback if server failed
       setLiked(false)
       setLikes((n) => Math.max(0, n - 1))
-    } finally {
-      setBusy(false)
     }
   }
 
   return (
     <article className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm mb-6">
-      {/* header */}
+      {/* header like Instagram */}
       <div className="flex items-center gap-3 p-3">
         <div className="h-8 w-8 rounded-full bg-neutral-300 dark:bg-neutral-700 flex items-center justify-center text-xs font-bold">
           {author.charAt(0).toUpperCase()}
@@ -74,21 +68,20 @@ export default function PostCard({ post }: PostCardProps) {
         />
       </div>
 
-      <div className="p-4 space-y-3">
-        {/* date + likes row */}
-        <div className="flex items-center justify-between text-xs opacity-70">
+      <div className="p-4 space-y-2">
+        <div className="flex items-center justify-between text-xs opacity-80">
+          <span>{likes.toLocaleString()} likes</span>
           <span>{new Date(post.createdAt).toLocaleString()}</span>
-          <span>{likes.toLocaleString()} {likes === 1 ? 'like' : 'likes'}</span>
         </div>
 
         <p className="text-sm leading-relaxed whitespace-pre-wrap">{post.caption}</p>
 
         <button
-          onClick={likeOnce}
-          className="mt-1 inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+          onClick={handleLike}
+          disabled={liked}
+          className="mt-1 inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-60"
           aria-pressed={liked}
           type="button"
-          disabled={liked || busy}
         >
           <span>{liked ? '♥' : '♡'}</span>
           <span>{liked ? 'Liked' : 'Like'}</span>
