@@ -1,70 +1,92 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react';
 
 type Post = {
-  id: string
-  imageUrl: string
-  caption: string
-  createdAt: string
-  likes: number
-}
+  id: string;
+  imageUrl: string;
+  caption: string;
+  createdAt: string;
+  likes: number;
+};
 
 export default function AdminPage() {
-  const [caption, setCaption] = useState('')
-  const [file, setFile] = useState<File | null>(null)
-  const [status, setStatus] = useState<string | null>(null)
-  const [posts, setPosts] = useState<Post[]>([])
+  const [caption, setCaption] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [posting, setPosting] = useState(false);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // fetch posts for admin
   async function loadPosts() {
-    const res = await fetch('/api/posts?all=1')
+    const res = await fetch('/api/posts?all=1', { cache: 'no-store' });
     if (res.ok) {
-      const { items } = await res.json()  // ✅ unwrap items
-      setPosts(items)
+      const { items } = await res.json();
+      setPosts(items);
     }
   }
 
   useEffect(() => {
-    loadPosts()
-  }, [])
+    loadPosts();
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+    e.preventDefault();
     if (!file) {
-      setStatus('Please select a file first')
-      return
+      setStatus('Please select a file first');
+      return;
     }
 
-    setStatus('Uploading...')
+    setPosting(true);
+    setStatus('Uploading...');
 
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('caption', caption)
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('caption', caption);
 
-    const res = await fetch('/api/upload', {
-      method: 'POST',
-      body: formData,
-    })
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+        // Make intent explicit in standalone/PWA:
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
 
-    if (res.ok) {
-      setStatus('Post created!')
-      setCaption('')
-      setFile(null)
-      loadPosts() // refresh after upload
-    } else {
-      const { error } = await res.json().catch(() => ({ error: 'Unknown error' }))
-      setStatus(`Failed: ${error}`)
+      if (!res.ok) {
+        let msg = 'Unknown error';
+        try {
+          const j = await res.json();
+          msg = j?.error || msg;
+        } catch {}
+        setStatus(`Failed: ${msg}`);
+        setPosting(false);
+        return;
+      }
+
+      setStatus('Post created!');
+      setCaption('');
+      setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      await loadPosts();
+    } catch (err: any) {
+      setStatus(`Failed: ${err?.message || 'network error'}`);
+    } finally {
+      setPosting(false);
     }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Delete this post permanently?')) return
-    const res = await fetch(`/api/posts/${id}`, { method: 'DELETE' })
+    if (!confirm('Delete this post permanently?')) return;
+    const res = await fetch(`/api/posts/${id}`, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
     if (res.ok) {
-      setPosts((prev) => prev.filter((p) => p.id !== id))
+      setPosts((prev) => prev.filter((p) => p.id !== id));
     } else {
-      alert('Failed to delete')
+      alert('Failed to delete');
     }
   }
 
@@ -72,8 +94,9 @@ export default function AdminPage() {
     <main className="max-w-md mx-auto p-6 space-y-8">
       <section>
         <h1 className="text-2xl font-bold mb-6">Add New Post</h1>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" encType="multipart/form-data">
           <input
+            ref={fileInputRef}
             type="file"
             accept="image/*"
             onChange={(e) => setFile(e.target.files?.[0] || null)}
@@ -87,9 +110,10 @@ export default function AdminPage() {
           />
           <button
             type="submit"
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            disabled={posting}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
           >
-            Post
+            {posting ? 'Uploading…' : 'Post'}
           </button>
         </form>
         {status && <p className="mt-4 text-sm">{status}</p>}
@@ -108,7 +132,9 @@ export default function AdminPage() {
               <p className="text-sm">{post.caption}</p>
               <div className="flex justify-between items-center text-xs opacity-70">
                 <span>{new Date(post.createdAt).toLocaleString()}</span>
-                <span>{post.likes} {post.likes === 1 ? 'like' : 'likes'}</span>
+                <span>
+                  {post.likes} {post.likes === 1 ? 'like' : 'likes'}
+                </span>
               </div>
               <button
                 onClick={() => handleDelete(post.id)}
@@ -121,5 +147,5 @@ export default function AdminPage() {
         </ul>
       </section>
     </main>
-  )
+  );
 }
