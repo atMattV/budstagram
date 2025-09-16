@@ -1,5 +1,4 @@
-// Set DATABASE_URL in .env (Neon recommended)
-
+// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -15,7 +14,10 @@ model Post {
   imageUrl  String
   caption   String   @db.Text
   published Boolean  @default(true)
-  slug      String?  @unique
+
+  // NEW
+  author    String   @default("The Chisp")
+  verified  Boolean  @default(true)
 
   @@index([createdAt])
 }
