@@ -49,14 +49,15 @@ export default function AdminPage() {
     setStatus('Uploading...');
 
     try {
-      // 1) Direct browser -> Vercel Blob (no server body limits)
+      // 1) Direct browser → Vercel Blob (via handleUploadUrl)
       const up = await upload(file.name || 'upload', file, {
         access: 'public',
+        handleUploadUrl: '/api/blob/handle',
         contentType: file.type || 'application/octet-stream',
       });
       const imageUrl = up.url;
 
-      // 2) Create DB record (and revalidate feed)
+      // 2) Create DB record and revalidate feed
       const createRes = await fetch('/api/revalidate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
