@@ -1,48 +1,61 @@
-// src/components/PostCard.tsx
-'use client'
+'use client';
 
-import Image from 'next/image'
-import { useState } from 'react'
+import Image from 'next/image';
+import { useEffect, useMemo, useState } from 'react';
 
 type PostCardProps = {
   post: {
-    id: string
-    imageUrl: string
-    caption: string
-    createdAt: string
-    likes: number
-    author?: string
-    verified?: boolean
-  }
-}
+    id: string;
+    imageUrl: string;
+    caption: string;
+    createdAt: string; // serialized ISO from server
+    author?: string;
+    verified?: boolean;
+    likes: number;     // <-- make sure this is present
+  };
+};
 
 export default function PostCard({ post }: PostCardProps) {
-  const [liked, setLiked] = useState(false)
-  const [likes, setLikes] = useState<number>(post.likes ?? 0)
+  const author = post.author ?? 'The Chisp';
+  const verified = post.verified ?? true;
 
-  const author = post.author ?? 'The Chisp'
-  const verified = post.verified ?? true
+  // optimistic like state
+  const [likes, setLikes] = useState<number>(post.likes);
+  const [liking, setLiking] = useState(false);
+
+  // prevent multiple likes from the same browser (very lightweight)
+  const storageKey = useMemo(() => `liked:${post.id}`, [post.id]);
+  const [alreadyLiked, setAlreadyLiked] = useState<boolean>(false);
+
+  useEffect(() => {
+    setAlreadyLiked(typeof window !== 'undefined' && localStorage.getItem(storageKey) === '1');
+  }, [storageKey]);
 
   async function handleLike() {
-    if (liked) return
-    setLiked(true)
-    setLikes((n) => n + 1) // optimistic
+    if (liking || alreadyLiked) return;
+    setLiking(true);
+
+    // optimistic update
+    const prev = likes;
+    setLikes(prev + 1);
 
     try {
-      const res = await fetch(`/api/posts/${post.id}/like`, { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to like')
-      const data = await res.json()
-      if (typeof data.likes === 'number') setLikes(data.likes)
+      const res = await fetch(`/api/posts/${post.id}/like`, { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to like');
+      // persist the “one like per browser” flag
+      localStorage.setItem(storageKey, '1');
+      setAlreadyLiked(true);
     } catch {
-      // rollback if server failed
-      setLiked(false)
-      setLikes((n) => Math.max(0, n - 1))
+      // rollback on error
+      setLikes(prev);
+    } finally {
+      setLiking(false);
     }
   }
 
   return (
     <article className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm mb-6">
-      {/* header like Instagram */}
+      {/* header */}
       <div className="flex items-center gap-3 p-3">
         <div className="h-8 w-8 rounded-full bg-neutral-300 dark:bg-neutral-700 flex items-center justify-center text-xs font-bold">
           {author.charAt(0).toUpperCase()}
@@ -58,6 +71,7 @@ export default function PostCard({ post }: PostCardProps) {
         </div>
       </div>
 
+      {/* image */}
       <div className="relative aspect-square">
         <Image
           src={post.imageUrl}
@@ -68,25 +82,26 @@ export default function PostCard({ post }: PostCardProps) {
         />
       </div>
 
+      {/* body */}
       <div className="p-4 space-y-2">
-        <div className="flex items-center justify-between text-xs opacity-80">
-          <span>{likes.toLocaleString()} likes</span>
-          <span>{new Date(post.createdAt).toLocaleString()}</span>
-        </div>
-
+        <div className="text-xs opacity-60">{new Date(post.createdAt).toLocaleString()}</div>
         <p className="text-sm leading-relaxed whitespace-pre-wrap">{post.caption}</p>
 
-        <button
-          onClick={handleLike}
-          disabled={liked}
-          className="mt-1 inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-60"
-          aria-pressed={liked}
-          type="button"
-        >
-          <span>{liked ? '♥' : '♡'}</span>
-          <span>{liked ? 'Liked' : 'Like'}</span>
-        </button>
+        {/* likes count + button */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs opacity-70">{likes} {likes === 1 ? 'like' : 'likes'}</span>
+          <button
+            onClick={handleLike}
+            disabled={liking || alreadyLiked}
+            className="inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-60"
+            type="button"
+            aria-pressed={alreadyLiked}
+          >
+            <span>{alreadyLiked ? '♥' : '♡'}</span>
+            <span>{alreadyLiked ? 'Liked' : liking ? 'Liking…' : 'Like'}</span>
+          </button>
+        </div>
       </div>
     </article>
-  )
+  );
 }
