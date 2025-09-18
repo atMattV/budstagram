@@ -16,6 +16,30 @@ function fmt(dtISO: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(d);
 }
 
+// shrink large images before upload (mobile photos are huge)
+async function shrinkImage(file: File, maxDim = 1200, quality = 0.75): Promise<File> {
+  const img = await new Promise<HTMLImageElement>((res, rej) => {
+    const i = new Image();
+    i.onload = () => res(i);
+    i.onerror = rej;
+    i.src = URL.createObjectURL(file);
+  });
+
+  const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(img.width * scale);
+  canvas.height = Math.round(img.height * scale);
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+  const blob: Blob = await new Promise((res) =>
+    canvas.toBlob((b) => res(b as Blob), 'image/jpeg', quality)
+  );
+  URL.revokeObjectURL(img.src);
+
+  return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
+}
+
 export default function AdminPage() {
   const [caption, setCaption] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -108,7 +132,16 @@ export default function AdminPage() {
             ref={fileInputRef}
             type="file"
             accept="image/*"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            onChange={async (e) => {
+              const f = e.target.files?.[0] || null;
+              if (!f) return setFile(null);
+              try {
+                const small = await shrinkImage(f);
+                setFile(small);
+              } catch {
+                setFile(f); // fallback if shrink fails
+              }
+            }}
             className="w-full"
           />
           <textarea
