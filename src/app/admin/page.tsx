@@ -148,7 +148,7 @@ export default function AdminPage() {
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
             placeholder="Write a caption..."
-            className="w-full p-2 border rounded text-black"
+            className="w-full p-2 border rounded bg-black text-neutral-200 placeholder-neutral-500"
           />
           <button
             type="submit"
