@@ -6,7 +6,17 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const result = await handleUpload({ body, request });
+    const result = await handleUpload({
+      body,
+      request,
+      onBeforeGenerateToken: async () => {
+        // you could validate auth here, right now allow everything
+        return {};
+      },
+      onUploadCompleted: async () => {
+        // called after upload, noop for now
+      },
+    });
     return Response.json(result, {
       headers: { 'Cache-Control': 'no-store' },
     });
