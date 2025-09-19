@@ -17,15 +17,19 @@ const TARGET_TYPE = 'image/webp'
 async function downscaleImage(file: File): Promise<File> {
   if (!file.type.startsWith('image/')) return file
 
-  const bmp = await (('createImageBitmap' in window)
-    ? createImageBitmap(file).catch(() => null)
-    : Promise.resolve(null))
+  const bmp =
+    'createImageBitmap' in window
+      ? await createImageBitmap(file).catch(() => null)
+      : null
 
-  let imgW = 0, imgH = 0, draw: (ctx: CanvasRenderingContext2D) => void
+  let w = 0,
+    h = 0,
+    draw: (ctx: CanvasRenderingContext2D) => void
 
   if (bmp) {
-    imgW = bmp.width; imgH = bmp.height
-    draw = (ctx) => { ctx.drawImage(bmp, 0, 0, imgW, imgH) }
+    w = bmp.width
+    h = bmp.height
+    draw = (ctx) => ctx.drawImage(bmp, 0, 0, w, h)
   } else {
     const img = await new Promise<HTMLImageElement>((res, rej) => {
       const i = new Image()
@@ -33,19 +37,20 @@ async function downscaleImage(file: File): Promise<File> {
       i.onerror = rej
       i.src = URL.createObjectURL(file)
     })
-    imgW = img.naturalWidth; imgH = img.naturalHeight
-    draw = (ctx) => { ctx.drawImage(img, 0, 0, imgW, imgH) }
+    w = img.naturalWidth
+    h = img.naturalHeight
+    draw = (ctx) => ctx.drawImage(img, 0, 0, w, h)
   }
 
-  const scale = Math.min(1, MAX_DIM / Math.max(imgW, imgH))
-  const w = Math.max(1, Math.round(imgW * scale))
-  const h = Math.max(1, Math.round(imgH * scale))
+  const scale = Math.min(1, MAX_DIM / Math.max(w, h))
+  const tw = Math.max(1, Math.round(w * scale))
+  const th = Math.max(1, Math.round(h * scale))
 
   const canvas = document.createElement('canvas')
-  canvas.width = w; canvas.height = h
+  canvas.width = tw
+  canvas.height = th
   const ctx = canvas.getContext('2d', { alpha: false })
   if (!ctx) return file
-
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
   draw(ctx)
@@ -58,7 +63,7 @@ async function downscaleImage(file: File): Promise<File> {
     )
   )
 
-  const ext = (blob.type === 'image/webp') ? 'webp' : 'jpg'
+  const ext = blob.type === 'image/webp' ? 'webp' : 'jpg'
   const name = `bud_${Date.now()}.${ext}`
   return new File([blob], name, { type: blob.type, lastModified: Date.now() })
 }
@@ -77,7 +82,9 @@ export default function AdminPage() {
     setPosts(items)
   }
 
-  useEffect(() => { loadPosts() }, [])
+  useEffect(() => {
+    loadPosts()
+  }, [])
 
   async function handleSelectedFile(file: File | null) {
     if (!file) return
@@ -100,6 +107,17 @@ export default function AdminPage() {
     }
   }
 
+  async function handleDelete(id: string) {
+    if (!confirm('Delete this post permanently?')) return
+    const res = await fetch(`/api/posts/${id}`, { method: 'DELETE' })
+    if (res.ok) {
+      setPosts((prev) => prev.filter((p) => p.id !== id))
+    } else {
+      const { error } = await res.json().catch(() => ({ error: 'Failed to delete' }))
+      alert(error)
+    }
+  }
+
   return (
     <main className="max-w-md mx-auto p-6 space-y-8">
       <section>
@@ -117,7 +135,7 @@ export default function AdminPage() {
           ref={cameraInputRef}
           type="file"
           accept="image/*"
-          capture="environment"         // forces camera
+          capture="environment"
           className="hidden"
           onChange={(e) => handleSelectedFile(e.target.files?.[0] || null)}
         />
@@ -144,7 +162,7 @@ export default function AdminPage() {
           value={caption}
           onChange={(e) => setCaption(e.target.value)}
           placeholder="Write a caption..."
-          className="w-full p-2 border rounded text-black"
+          className="w-full p-2 rounded border border-neutral-700 bg-neutral-900 text-white placeholder-white/60"
         />
 
         {status && <p className="mt-4 text-sm">{status}</p>}
@@ -163,8 +181,16 @@ export default function AdminPage() {
               <p className="text-sm">{post.caption}</p>
               <div className="flex justify-between items-center text-xs opacity-70">
                 <span>{new Date(post.createdAt).toLocaleString()}</span>
-                <span>{post.likes} {post.likes === 1 ? 'like' : 'likes'}</span>
+                <span>
+                  {post.likes} {post.likes === 1 ? 'like' : 'likes'}
+                </span>
               </div>
+              <button
+                onClick={() => handleDelete(post.id)}
+                className="self-end mt-2 px-3 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600"
+              >
+                Delete
+              </button>
             </li>
           ))}
         </ul>
