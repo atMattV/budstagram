@@ -1,3 +1,4 @@
+// src/app/api/upload/route.ts
 import { NextResponse } from 'next/server'
 import { put } from '@vercel/blob'
 import { prisma } from '@/lib/db'
@@ -15,13 +16,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
     }
 
-    // Unique, cache-busting path (no collisions, no stale CDN)
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_')
     const key = `bud/${Date.now()}-${crypto.randomUUID()}-${safeName}`
 
-    // Ensure correct content-type and stable bytes
-    const bytes = new Uint8Array(await file.arrayBuffer())
-    const blob = await put(key, bytes, {
+    // FIX: pass the File (or use Buffer.from(await file.arrayBuffer()) in Node runtime)
+    const blob = await put(key, file, {
       access: 'public',
       contentType: file.type || 'image/jpeg',
     })
