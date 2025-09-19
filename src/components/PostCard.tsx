@@ -8,7 +8,7 @@ type PostCardProps = {
     id: string;
     imageUrl: string;
     caption: string;
-    createdAt: string; // ISO from server
+    createdAt: string;
     author?: string;
     verified?: boolean;
     likes: number;
@@ -17,7 +17,6 @@ type PostCardProps = {
 
 function fmt(dtISO: string) {
   const d = new Date(dtISO);
-  // No seconds. Locale-aware.
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -35,17 +34,38 @@ export default function PostCard({ post }: PostCardProps) {
   const [alreadyLiked, setAlreadyLiked] = useState<boolean>(false);
 
   useEffect(() => {
-    setAlreadyLiked(typeof window !== 'undefined' && localStorage.getItem(storageKey) === '1');
-  }, [storageKey]);
+    // local fast path
+    const isLocal = typeof window !== 'undefined' && localStorage.getItem(storageKey) === '1';
+    if (isLocal) {
+      setAlreadyLiked(true);
+      return;
+    }
+    // ask server (cookie-based, persistent)
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/posts/${post.id}/liked`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (alive && data.liked) {
+          setAlreadyLiked(true);
+          localStorage.setItem(storageKey, '1');
+        }
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [post.id, storageKey]);
 
   async function handleLike() {
     if (liking || alreadyLiked) return;
     setLiking(true);
     const prev = likes;
-    setLikes(prev + 1);
+    setLikes(prev + 1); // optimistic
     try {
       const res = await fetch(`/api/posts/${post.id}/like`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed to like');
+      const data = await res.json();
+      if (typeof data.likes === 'number') setLikes(data.likes);
       localStorage.setItem(storageKey, '1');
       setAlreadyLiked(true);
     } catch {
