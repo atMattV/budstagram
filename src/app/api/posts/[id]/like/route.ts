@@ -18,7 +18,6 @@ export async function POST(
   }
 
   try {
-    // Idempotent like: if already exists -> no-op
     const existing = await prisma.like.findUnique({
       where: { postId_deviceId: { postId: params.id, deviceId } },
       select: { id: true },
@@ -27,16 +26,12 @@ export async function POST(
     let likes: number
 
     if (existing) {
-      // ensure counter is consistent (cheap count on this post)
       likes = await prisma.like.count({ where: { postId: params.id } })
       await prisma.post.update({ where: { id: params.id }, data: { likes } })
     } else {
       await prisma.$transaction(async (tx) => {
         await tx.like.create({ data: { postId: params.id, deviceId } })
-        await tx.post.update({
-          where: { id: params.id },
-          data: { likes: { increment: 1 } },
-        })
+        await tx.post.update({ where: { id: params.id }, data: { likes: { increment: 1 } } })
       })
       const updated = await prisma.post.findUnique({
         where: { id: params.id },
