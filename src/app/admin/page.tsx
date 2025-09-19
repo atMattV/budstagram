@@ -19,8 +19,8 @@ export default function AdminPage() {
   async function loadPosts() {
     const res = await fetch('/api/posts?all=1', { cache: 'no-store' })
     if (!res.ok) return
-    const { items } = await res.json() as { items: Post[]; nextCursor: string | null }
-    setPosts(items) // <-- was the bug (you were setting the whole object)
+    const { items } = (await res.json()) as { items: Post[]; nextCursor: string | null }
+    setPosts(items)
   }
 
   useEffect(() => {
