@@ -17,50 +17,64 @@ const TARGET_TYPE = 'image/webp'
 async function downscaleImage(file: File): Promise<File> {
   if (!file.type.startsWith('image/')) return file
 
-  const bmp =
-    'createImageBitmap' in window
-      ? await createImageBitmap(file).catch(() => null)
-      : null
+  // Try ImageBitmap first
+  let bmp: ImageBitmap | null = null
+  if ('createImageBitmap' in window) {
+    try { bmp = await createImageBitmap(file) } catch { bmp = null }
+  }
 
-  let w = 0, h = 0, draw: (ctx: CanvasRenderingContext2D) => void
+  let w = 0, h = 0
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d', { alpha: false })
+  if (!ctx) return file
 
   if (bmp) {
     w = bmp.width; h = bmp.height
-    draw = (ctx) => ctx.drawImage(bmp, 0, 0, w, h)
+    const scale = Math.min(1, MAX_DIM / Math.max(w, h))
+    const tw = Math.max(1, Math.round(w * scale))
+    const th = Math.max(1, Math.round(h * scale))
+    canvas.width = tw; canvas.height = th
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(bmp, 0, 0, tw, th)
   } else {
+    // Fallback: FileReader -> <img>, with proper URL revoke
+    const dataURL = await new Promise<string>((res, rej) => {
+      const fr = new FileReader()
+      fr.onload = () => res(fr.result as string)
+      fr.onerror = rej
+      fr.readAsDataURL(file)
+    })
     const img = await new Promise<HTMLImageElement>((res, rej) => {
       const i = new Image()
       i.onload = () => res(i)
       i.onerror = rej
-      i.src = URL.createObjectURL(file)
+      i.src = dataURL
     })
     w = img.naturalWidth; h = img.naturalHeight
-    draw = (ctx) => ctx.drawImage(img, 0, 0, w, h)
+    const scale = Math.min(1, MAX_DIM / Math.max(w, h))
+    const tw = Math.max(1, Math.round(w * scale))
+    const th = Math.max(1, Math.round(h * scale))
+    canvas.width = tw; canvas.height = th
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(img, 0, 0, tw, th)
   }
 
-  const scale = Math.min(1, MAX_DIM / Math.max(w, h))
-  const tw = Math.max(1, Math.round(w * scale))
-  const th = Math.max(1, Math.round(h * scale))
-
-  const canvas = document.createElement('canvas')
-  canvas.width = tw; canvas.height = th
-  const ctx = canvas.getContext('2d', { alpha: false })
-  if (!ctx) return file
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
-  draw(ctx)
+  const typeSupported = (() => {
+    try {
+      return canvas.toDataURL(TARGET_TYPE).startsWith('data:image/webp')
+    } catch { return false }
+  })()
+  const outType = typeSupported ? TARGET_TYPE : 'image/jpeg'
 
   const blob: Blob = await new Promise((res) =>
-    canvas.toBlob(
-      (b) => res(b || file),
-      (canvas.toDataURL(TARGET_TYPE).length > 0 ? TARGET_TYPE : 'image/jpeg'),
-      QUALITY
-    )
+    canvas.toBlob((b) => res(b || file), outType, QUALITY)
   )
 
-  const ext = blob.type === 'image/webp' ? 'webp' : 'jpg'
-  const name = `bud_${Date.now()}.${ext}`
-  return new File([blob], name, { type: blob.type, lastModified: Date.now() })
+  const ext = outType === 'image/webp' ? 'webp' : 'jpg'
+  const name = `bud_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+  return new File([blob], name, { type: outType, lastModified: Date.now() })
 }
 
 export default function AdminPage() {
@@ -84,8 +98,14 @@ export default function AdminPage() {
 
   function handlePick(file: File | null) {
     setSelectedFile(file)
-    if (previewUrl) URL.revokeObjectURL(previewUrl)
-    setPreviewUrl(file ? URL.createObjectURL(file) : null)
+    // Always revoke previous preview URL to avoid stale blobs
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return file ? URL.createObjectURL(file) : null
+    })
+    // Reset inputs so re-selecting same image still fires change
+    if (galleryInputRef.current) galleryInputRef.current.value = ''
+    if (cameraInputRef.current) cameraInputRef.current.value = ''
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -100,7 +120,11 @@ export default function AdminPage() {
     formData.append('file', optimized, optimized.name)
     formData.append('caption', caption)
 
-    const res = await fetch('/api/upload', { method: 'POST', body: formData })
+    const res = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData,
+      cache: 'no-store',
+    })
     if (res.ok) {
       setStatus('Post created!')
       setCaption('')
@@ -114,7 +138,7 @@ export default function AdminPage() {
 
   async function handleDelete(id: string) {
     if (!confirm('Delete this post permanently?')) return
-    const res = await fetch(`/api/posts/${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/posts/${id}`, { method: 'DELETE', cache: 'no-store' })
     if (res.ok) {
       setPosts(prev => prev.filter(p => p.id !== id))
     } else {
@@ -166,7 +190,7 @@ export default function AdminPage() {
         {/* Preview + filename */}
         {previewUrl && (
           <div className="mb-3">
-            <img src={previewUrl} alt="preview" className="w-full aspect-square object-cover rounded" />
+            <img key={previewUrl} src={previewUrl} alt="preview" className="w-full aspect-square object-cover rounded" />
           </div>
         )}
         <div className="text-xs opacity-70 mb-3">
