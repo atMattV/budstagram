@@ -17,10 +17,7 @@ type PostCardProps = {
 
 function fmt(dtISO: string) {
   const d = new Date(dtISO);
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(d);
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(d);
 }
 
 export default function PostCard({ post }: PostCardProps) {
@@ -34,13 +31,11 @@ export default function PostCard({ post }: PostCardProps) {
   const [alreadyLiked, setAlreadyLiked] = useState<boolean>(false);
 
   useEffect(() => {
-    // local fast path
     const isLocal = typeof window !== 'undefined' && localStorage.getItem(storageKey) === '1';
     if (isLocal) {
       setAlreadyLiked(true);
       return;
     }
-    // ask server (cookie-based, persistent)
     let alive = true;
     (async () => {
       try {
@@ -59,17 +54,19 @@ export default function PostCard({ post }: PostCardProps) {
   async function handleLike() {
     if (liking || alreadyLiked) return;
     setLiking(true);
+
     const prev = likes;
     setLikes(prev + 1); // optimistic
+
     try {
       const res = await fetch(`/api/posts/${post.id}/like`, { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to like');
+      if (!res.ok) throw new Error('failed');
       const data = await res.json();
       if (typeof data.likes === 'number') setLikes(data.likes);
       localStorage.setItem(storageKey, '1');
       setAlreadyLiked(true);
     } catch {
-      setLikes(prev);
+      setLikes(prev); // rollback
     } finally {
       setLiking(false);
     }
@@ -77,7 +74,6 @@ export default function PostCard({ post }: PostCardProps) {
 
   return (
     <article className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm mb-6">
-      {/* header */}
       <div className="flex items-center gap-3 p-3">
         <div className="h-8 w-8 rounded-full bg-neutral-300 dark:bg-neutral-700 flex items-center justify-center text-xs font-bold">
           {author.charAt(0).toUpperCase()}
@@ -93,7 +89,6 @@ export default function PostCard({ post }: PostCardProps) {
         </div>
       </div>
 
-      {/* image */}
       <div className="relative aspect-square">
         <Image
           src={post.imageUrl}
@@ -104,16 +99,12 @@ export default function PostCard({ post }: PostCardProps) {
         />
       </div>
 
-      {/* body */}
       <div className="p-4 space-y-2">
         <div className="text-xs opacity-60">{fmt(post.createdAt)}</div>
         <p className="text-sm leading-relaxed whitespace-pre-wrap">{post.caption}</p>
 
-        {/* likes count + button */}
         <div className="flex items-center gap-3">
-          <span className="text-xs opacity-70">
-            {likes} {likes === 1 ? 'like' : 'likes'}
-          </span>
+          <span className="text-xs opacity-70">{likes} {likes === 1 ? 'like' : 'likes'}</span>
           <button
             onClick={handleLike}
             disabled={liking || alreadyLiked}
@@ -122,7 +113,7 @@ export default function PostCard({ post }: PostCardProps) {
             aria-pressed={alreadyLiked}
           >
             <span>{alreadyLiked ? '♥' : '♡'}</span>
-            <span>{alreadyLiked ? 'Liked' : liking ? 'Liking…' : 'Like'}</span>
+            <span>{alreadyLiked ? 'Liked' : (liking ? 'Liking…' : 'Like')}</span>
           </button>
         </div>
       </div>
