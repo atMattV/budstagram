@@ -10,6 +10,62 @@ type Post = {
   likes: number
 }
 
+const MAX_DIM = 1920;        // cap long edge to 1920px
+const QUALITY = 0.82;        // 0..1
+const TARGET_TYPE = 'image/webp'; // smaller than JPEG on mobile
+
+async function downscaleImage(file: File): Promise<File> {
+  // If already small, pass through
+  if (!file.type.startsWith('image/')) return file;
+
+  const bmp = await (('createImageBitmap' in window)
+    ? createImageBitmap(file).catch(() => null)
+    : Promise.resolve(null));
+
+  let imgW = 0, imgH = 0, draw: (ctx: CanvasRenderingContext2D) => void;
+
+  if (bmp) {
+    imgW = bmp.width; imgH = bmp.height;
+    draw = (ctx) => { ctx.drawImage(bmp, 0, 0, imgW, imgH) };
+  } else {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = URL.createObjectURL(file);
+    });
+    imgW = img.naturalWidth; imgH = img.naturalHeight;
+    draw = (ctx) => { ctx.drawImage(img, 0, 0, imgW, imgH) };
+  }
+
+  const scale = Math.min(1, MAX_DIM / Math.max(imgW, imgH));
+  const w = Math.max(1, Math.round(imgW * scale));
+  const h = Math.max(1, Math.round(imgH * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  if (!ctx) return file;
+
+  // High quality sampling
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  draw(ctx);
+
+  const blob: Blob = await new Promise((res) =>
+    canvas.toBlob(
+      // iOS Safari supports webp since 16; fallback to jpeg if needed
+      (b) => res(b || file),
+      (canvas.toDataURL(TARGET_TYPE).length > 0 ? TARGET_TYPE : 'image/jpeg'),
+      QUALITY
+    )
+  );
+
+  const ext = (blob.type === 'image/webp') ? 'webp' : 'jpg';
+  const name = `bud_${Date.now()}.${ext}`;
+  return new File([blob], name, { type: blob.type, lastModified: Date.now() });
+}
+
 export default function AdminPage() {
   const [caption, setCaption] = useState('')
   const [file, setFile] = useState<File | null>(null)
@@ -23,20 +79,18 @@ export default function AdminPage() {
     setPosts(items)
   }
 
-  useEffect(() => {
-    loadPosts()
-  }, [])
+  useEffect(() => { loadPosts() }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!file) {
-      setStatus('Please select a file first')
-      return
-    }
-    setStatus('Uploading...')
+    if (!file) { setStatus('Please select a file first'); return }
+    setStatus('Optimizing…')
 
+    const optimized = await downscaleImage(file)
+
+    setStatus('Uploading…')
     const formData = new FormData()
-    formData.append('file', file)
+    formData.append('file', optimized, optimized.name)
     formData.append('caption', caption)
 
     const res = await fetch('/api/upload', { method: 'POST', body: formData })
@@ -44,20 +98,10 @@ export default function AdminPage() {
       setStatus('Post created!')
       setCaption('')
       setFile(null)
-      loadPosts()
+      await loadPosts()
     } else {
       const { error } = await res.json().catch(() => ({ error: 'Unknown error' }))
       setStatus(`Failed: ${error}`)
-    }
-  }
-
-  async function handleDelete(id: string) {
-    if (!confirm('Delete this post permanently?')) return
-    const res = await fetch(`/api/posts/${id}`, { method: 'DELETE' })
-    if (res.ok) {
-      setPosts(prev => prev.filter(p => p.id !== id))
-    } else {
-      alert('Failed to delete')
     }
   }
 
@@ -69,6 +113,7 @@ export default function AdminPage() {
           <input
             type="file"
             accept="image/*"
+            capture="environment"
             onChange={(e) => setFile(e.target.files?.[0] || null)}
             className="w-full"
           />
@@ -100,12 +145,6 @@ export default function AdminPage() {
                 <span>{new Date(post.createdAt).toLocaleString()}</span>
                 <span>{post.likes} {post.likes === 1 ? 'like' : 'likes'}</span>
               </div>
-              <button
-                onClick={() => handleDelete(post.id)}
-                className="self-end mt-2 px-3 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600"
-              >
-                Delete
-              </button>
             </li>
           ))}
         </ul>
