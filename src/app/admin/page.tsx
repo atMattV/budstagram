@@ -22,13 +22,10 @@ async function downscaleImage(file: File): Promise<File> {
       ? await createImageBitmap(file).catch(() => null)
       : null
 
-  let w = 0,
-    h = 0,
-    draw: (ctx: CanvasRenderingContext2D) => void
+  let w = 0, h = 0, draw: (ctx: CanvasRenderingContext2D) => void
 
   if (bmp) {
-    w = bmp.width
-    h = bmp.height
+    w = bmp.width; h = bmp.height
     draw = (ctx) => ctx.drawImage(bmp, 0, 0, w, h)
   } else {
     const img = await new Promise<HTMLImageElement>((res, rej) => {
@@ -37,8 +34,7 @@ async function downscaleImage(file: File): Promise<File> {
       i.onerror = rej
       i.src = URL.createObjectURL(file)
     })
-    w = img.naturalWidth
-    h = img.naturalHeight
+    w = img.naturalWidth; h = img.naturalHeight
     draw = (ctx) => ctx.drawImage(img, 0, 0, w, h)
   }
 
@@ -47,8 +43,7 @@ async function downscaleImage(file: File): Promise<File> {
   const th = Math.max(1, Math.round(h * scale))
 
   const canvas = document.createElement('canvas')
-  canvas.width = tw
-  canvas.height = th
+  canvas.width = tw; canvas.height = th
   const ctx = canvas.getContext('2d', { alpha: false })
   if (!ctx) return file
   ctx.imageSmoothingEnabled = true
@@ -72,6 +67,9 @@ export default function AdminPage() {
   const [caption, setCaption] = useState('')
   const [status, setStatus] = useState<string | null>(null)
   const [posts, setPosts] = useState<Post[]>([])
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+
   const galleryInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
 
@@ -82,14 +80,20 @@ export default function AdminPage() {
     setPosts(items)
   }
 
-  useEffect(() => {
-    loadPosts()
-  }, [])
+  useEffect(() => { loadPosts() }, [])
 
-  async function handleSelectedFile(file: File | null) {
-    if (!file) return
+  function handlePick(file: File | null) {
+    setSelectedFile(file)
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setPreviewUrl(file ? URL.createObjectURL(file) : null)
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selectedFile) { setStatus('Select a file'); return }
+
     setStatus('Optimizing…')
-    const optimized = await downscaleImage(file)
+    const optimized = await downscaleImage(selectedFile)
 
     setStatus('Uploading…')
     const formData = new FormData()
@@ -100,6 +104,7 @@ export default function AdminPage() {
     if (res.ok) {
       setStatus('Post created!')
       setCaption('')
+      handlePick(null)
       await loadPosts()
     } else {
       const { error } = await res.json().catch(() => ({ error: 'Unknown error' }))
@@ -111,7 +116,7 @@ export default function AdminPage() {
     if (!confirm('Delete this post permanently?')) return
     const res = await fetch(`/api/posts/${id}`, { method: 'DELETE' })
     if (res.ok) {
-      setPosts((prev) => prev.filter((p) => p.id !== id))
+      setPosts(prev => prev.filter(p => p.id !== id))
     } else {
       const { error } = await res.json().catch(() => ({ error: 'Failed to delete' }))
       alert(error)
@@ -121,7 +126,7 @@ export default function AdminPage() {
   return (
     <main className="max-w-md mx-auto p-6 space-y-8">
       <section>
-        <h1 className="text-2xl font-bold mb-6">Add New Post</h1>
+        <h1 className="text-2xl font-bold mb-4">Add New Post</h1>
 
         {/* Hidden inputs */}
         <input
@@ -129,7 +134,7 @@ export default function AdminPage() {
           type="file"
           accept="image/*"
           className="hidden"
-          onChange={(e) => handleSelectedFile(e.target.files?.[0] || null)}
+          onChange={(e) => handlePick(e.target.files?.[0] || null)}
         />
         <input
           ref={cameraInputRef}
@@ -137,17 +142,17 @@ export default function AdminPage() {
           accept="image/*"
           capture="environment"
           className="hidden"
-          onChange={(e) => handleSelectedFile(e.target.files?.[0] || null)}
+          onChange={(e) => handlePick(e.target.files?.[0] || null)}
         />
 
         {/* Controls */}
-        <div className="flex flex-wrap gap-3 mb-4">
+        <div className="flex flex-wrap gap-3 mb-3">
           <button
             type="button"
             onClick={() => galleryInputRef.current?.click()}
             className="px-4 py-2 rounded bg-neutral-200 dark:bg-neutral-700"
           >
-            Upload from gallery
+            Choose from gallery
           </button>
           <button
             type="button"
@@ -158,14 +163,33 @@ export default function AdminPage() {
           </button>
         </div>
 
-        <textarea
-          value={caption}
-          onChange={(e) => setCaption(e.target.value)}
-          placeholder="Write a caption..."
-          className="w-full p-2 rounded border border-neutral-700 bg-neutral-900 text-white placeholder-white/60"
-        />
+        {/* Preview + filename */}
+        {previewUrl && (
+          <div className="mb-3">
+            <img src={previewUrl} alt="preview" className="w-full aspect-square object-cover rounded" />
+          </div>
+        )}
+        <div className="text-xs opacity-70 mb-3">
+          {selectedFile ? `Selected: ${selectedFile.name} (${Math.round(selectedFile.size / 1024)} KB)` : 'No file selected'}
+        </div>
 
-        {status && <p className="mt-4 text-sm">{status}</p>}
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <textarea
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            placeholder="Write a caption..."
+            className="w-full p-2 rounded border border-neutral-700 bg-neutral-900 text-white placeholder-white/60"
+          />
+          <button
+            type="submit"
+            disabled={!selectedFile}
+            className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-50"
+          >
+            Post
+          </button>
+        </form>
+
+        {status && <p className="mt-3 text-sm">{status}</p>}
       </section>
 
       <section>
@@ -181,9 +205,7 @@ export default function AdminPage() {
               <p className="text-sm">{post.caption}</p>
               <div className="flex justify-between items-center text-xs opacity-70">
                 <span>{new Date(post.createdAt).toLocaleString()}</span>
-                <span>
-                  {post.likes} {post.likes === 1 ? 'like' : 'likes'}
-                </span>
+                <span>{post.likes} {post.likes === 1 ? 'like' : 'likes'}</span>
               </div>
               <button
                 onClick={() => handleDelete(post.id)}
