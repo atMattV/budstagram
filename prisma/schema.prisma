@@ -16,8 +16,6 @@ model Post {
   author    String   @default("The Chisp")
   verified  Boolean  @default(true)
   likes     Int      @default(0) // denormalized counter
-
-  // relation to Like rows
   hearts    Like[]
 
   @@index([createdAt])
