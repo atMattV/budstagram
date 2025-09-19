@@ -6,7 +6,7 @@ const PAGE_SIZE = 10
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const cursor = searchParams.get('cursor') // ISO string of createdAt to paginate after
-  const includeAll = searchParams.get('all') === '1' // keep if you want admin to see unpublished
+  const includeAll = searchParams.get('all') === '1'
 
   const where = includeAll ? {} : { published: true }
 
@@ -36,10 +36,27 @@ export async function GET(req: Request) {
     likes: p.likes ?? 0,
     author: p.author ?? 'The Chisp',
     verified: p.verified ?? true,
+    published: p.published,
   }))
 
   const nextCursor =
     items.length === PAGE_SIZE ? items[items.length - 1].createdAt : null
 
   return NextResponse.json({ items, nextCursor })
+}
+
+// DELETE handler for admin
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const id = searchParams.get('id')
+    if (!id) {
+      return NextResponse.json({ error: 'Missing id' }, { status: 400 })
+    }
+
+    await prisma.post.delete({ where: { id } })
+    return NextResponse.json({ success: true })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
 }
