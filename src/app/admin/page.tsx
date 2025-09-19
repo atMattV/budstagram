@@ -8,9 +8,6 @@ type Post = {
   caption: string
   createdAt: string
   likes: number
-  author: string
-  verified: boolean
-  published: boolean
 }
 
 export default function AdminPage() {
@@ -20,11 +17,10 @@ export default function AdminPage() {
   const [posts, setPosts] = useState<Post[]>([])
 
   async function loadPosts() {
-    const res = await fetch('/api/posts?all=1')
-    if (res.ok) {
-      const data = await res.json()
-      setPosts(data.items) // ✅ fix: use items, not raw object
-    }
+    const res = await fetch('/api/posts?all=1', { cache: 'no-store' })
+    if (!res.ok) return
+    const { items } = await res.json() as { items: Post[]; nextCursor: string | null }
+    setPosts(items) // <-- was the bug (you were setting the whole object)
   }
 
   useEffect(() => {
@@ -37,18 +33,13 @@ export default function AdminPage() {
       setStatus('Please select a file first')
       return
     }
-
     setStatus('Uploading...')
 
     const formData = new FormData()
     formData.append('file', file)
     formData.append('caption', caption)
 
-    const res = await fetch('/api/upload', {
-      method: 'POST',
-      body: formData,
-    })
-
+    const res = await fetch('/api/upload', { method: 'POST', body: formData })
     if (res.ok) {
       setStatus('Post created!')
       setCaption('')
@@ -62,9 +53,9 @@ export default function AdminPage() {
 
   async function handleDelete(id: string) {
     if (!confirm('Delete this post permanently?')) return
-    const res = await fetch(`/api/posts?id=${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/posts/${id}`, { method: 'DELETE' })
     if (res.ok) {
-      setPosts((prev) => prev.filter((p) => p.id !== id))
+      setPosts(prev => prev.filter(p => p.id !== id))
     } else {
       alert('Failed to delete')
     }
@@ -87,10 +78,7 @@ export default function AdminPage() {
             placeholder="Write a caption..."
             className="w-full p-2 border rounded text-black"
           />
-          <button
-            type="submit"
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
+          <button type="submit" className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
             Post
           </button>
         </form>
