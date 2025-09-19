@@ -3,17 +3,28 @@ import { put } from '@vercel/blob'
 import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(req: Request) {
   try {
     const form = await req.formData()
-    const caption = form.get('caption') as string
-    const file = form.get('file') as File
+    const caption = (form.get('caption') as string) || ''
+    const file = form.get('file') as File | null
 
     if (!file) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
     }
 
-    const blob = await put(file.name, file, { access: 'public' })
+    // Unique, cache-busting path (no collisions, no stale CDN)
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_')
+    const key = `bud/${Date.now()}-${crypto.randomUUID()}-${safeName}`
+
+    // Ensure correct content-type and stable bytes
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    const blob = await put(key, bytes, {
+      access: 'public',
+      contentType: file.type || 'image/jpeg',
+    })
 
     const post = await prisma.post.create({
       data: {
@@ -27,6 +38,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, post })
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return NextResponse.json({ error: String(err?.message || err) }, { status: 500 })
   }
 }
