@@ -20,41 +20,15 @@ function fmt(dtISO: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(d);
 }
 
-function isMobileUA(): boolean {
-  const ua =
-    typeof globalThis !== 'undefined' &&
-    (globalThis as any).navigator &&
-    typeof (globalThis as any).navigator.userAgent === 'string'
-      ? ((globalThis as any).navigator.userAgent as string)
-      : '';
-  return /Android|iPhone|iPad|iPod/i.test(ua);
-}
-
 function getOrigin(): string {
   return typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '';
 }
-
-function fileNameFromUrl(url: string, fallback: string) {
-  try {
-    const u = new URL(url);
-    const name = u.pathname.split('/').filter(Boolean).pop();
-    return name || fallback;
-  } catch {
-    return fallback;
-  }
+function getUA(): string {
+  const nav = (globalThis as any)?.navigator;
+  return typeof nav?.userAgent === 'string' ? nav.userAgent : '';
 }
-
-async function fetchImageFile(url: string, fallbackName: string): Promise<File | null> {
-  try {
-    const r = await fetch(url, { cache: 'no-store', mode: 'cors' });
-    if (!r.ok) return null;
-    const b = await r.blob();
-    const name = fileNameFromUrl(url, fallbackName);
-    const type = b.type || 'image/jpeg';
-    return new File([b], name, { type, lastModified: Date.now() });
-  } catch {
-    return null;
-  }
+function isMobileUA(): boolean {
+  return /Android|iPhone|iPad|iPod/i.test(getUA());
 }
 
 export default function PostCard({ post }: PostCardProps) {
@@ -90,36 +64,29 @@ export default function PostCard({ post }: PostCardProps) {
     }
   }
 
-  // ONE BUTTON: attach the image FILE + caption + pretty link (no `url` param).
-  // Most targets (incl. WhatsApp) show the image preview and keep the text body.
+  // FORCE WhatsApp share: text only, URL first (best chance to unfurl), then caption.
+  // No navigator.share. No files. Works the same on PWA and web.
   async function shareAll() {
     const prettyPage = `${getOrigin()}/p/${post.id}`;
-    const text = [post.caption?.trim() || '', prettyPage].filter(Boolean).join('\n\n');
+    const text = [prettyPage, (post.caption || '').trim()].filter(Boolean).join('\n\n');
 
-    try {
-      const file = await fetchImageFile(post.imageUrl, `bud_${post.id}.jpg`);
-      const canAttach = file && (navigator as any).canShare?.({ files: [file] });
-
-      if (canAttach && 'share' in navigator) {
-        await (navigator as any).share({ text, files: [file as File] });
-        return;
-      }
-      if ('share' in navigator) {
-        await (navigator as any).share({ text }); // still includes the link in text
-        return;
-      }
-    } catch {
-      // fall through to WA fallback
-    }
+    // pre-copy so user can paste if needed
+    try { await (navigator as any)?.clipboard?.writeText?.(text); } catch {}
 
     const encoded = encodeURIComponent(text);
-    const href = isMobileUA()
-      ? `whatsapp://send?text=${encoded}`
-      : `https://wa.me/?text=${encoded}`;
-    try {
-      window.location.href = href;
-    } catch {
-      window.open(`https://wa.me/?text=${encoded}`, '_blank', 'noopener,noreferrer');
+    const appURL = `whatsapp://send?text=${encoded}`;
+    const webURL = `https://wa.me/?text=${encoded}`;
+
+    if (isMobileUA()) {
+      // Try app first
+      try { window.location.href = appURL; } catch {}
+      // Fallback to WA Web if app isn’t handled
+      setTimeout(() => {
+        try { window.location.href = webURL; } catch { window.open(webURL, '_blank', 'noopener,noreferrer'); }
+      }, 1200);
+    } else {
+      // Desktop → WA Web
+      try { window.open(webURL, '_blank', 'noopener,noreferrer'); } catch { window.location.href = webURL; }
     }
   }
 
@@ -176,7 +143,7 @@ export default function PostCard({ post }: PostCardProps) {
             onClick={shareAll}
             className="inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
             type="button"
-            title="Share (image + caption + link)"
+            title="Share to WhatsApp"
           >
             ⤴ Share
           </button>
