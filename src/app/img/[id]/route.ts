@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'            // Prisma is NOT edge-safe
 export const dynamic = 'force-dynamic'
 
 export async function GET(
@@ -14,8 +14,7 @@ export async function GET(
   if (!post) return new Response('Not found', { status: 404 })
 
   const upstream = await fetch(post.imageUrl, { cache: 'no-store' })
-  if (!upstream.ok || !upstream.body)
-    return new Response('Bad image', { status: 502 })
+  if (!upstream.ok || !upstream.body) return new Response('Bad image', { status: 502 })
 
   const ct = upstream.headers.get('content-type') ?? 'image/jpeg'
   return new Response(upstream.body, {
