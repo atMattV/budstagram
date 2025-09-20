@@ -34,13 +34,35 @@ function getOrigin(): string {
   return typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '';
 }
 
+function fileNameFromUrl(url: string, fallback: string) {
+  try {
+    const u = new URL(url);
+    const name = u.pathname.split('/').filter(Boolean).pop();
+    return name || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function fetchImageFile(url: string, fallbackName: string): Promise<File | null> {
+  try {
+    const r = await fetch(url, { cache: 'no-store', mode: 'cors' });
+    if (!r.ok) return null;
+    const b = await r.blob();
+    const name = fileNameFromUrl(url, fallbackName);
+    const type = b.type || 'image/jpeg';
+    return new File([b], name, { type, lastModified: Date.now() });
+  } catch {
+    return null;
+  }
+}
+
 export default function PostCard({ post }: PostCardProps) {
   const author = post.author ?? 'The Chisp';
   const verified = post.verified ?? true;
 
   const [likes, setLikes] = useState<number>(post.likes);
   const [liking, setLiking] = useState(false);
-
   const storageKey = useMemo(() => `liked:${post.id}`, [post.id]);
   const [alreadyLiked, setAlreadyLiked] = useState<boolean>(false);
 
@@ -68,15 +90,22 @@ export default function PostCard({ post }: PostCardProps) {
     }
   }
 
-  // Share: force message body to include caption + URL (no `url` param).
-  // Preview image + text comes from OG tags on /p/[id].
+  // ONE BUTTON: attach the image FILE + caption + pretty link (no `url` param).
+  // Most targets (incl. WhatsApp) show the image preview and keep the text body.
   async function shareAll() {
     const prettyPage = `${getOrigin()}/p/${post.id}`;
     const text = [post.caption?.trim() || '', prettyPage].filter(Boolean).join('\n\n');
 
     try {
-      if (typeof navigator !== 'undefined' && 'share' in navigator) {
-        await (navigator as any).share({ title: 'Budstagram', text });
+      const file = await fetchImageFile(post.imageUrl, `bud_${post.id}.jpg`);
+      const canAttach = file && (navigator as any).canShare?.({ files: [file] });
+
+      if (canAttach && 'share' in navigator) {
+        await (navigator as any).share({ text, files: [file as File] });
+        return;
+      }
+      if ('share' in navigator) {
+        await (navigator as any).share({ text }); // still includes the link in text
         return;
       }
     } catch {
@@ -125,8 +154,8 @@ export default function PostCard({ post }: PostCardProps) {
 
       {/* body */}
       <div className="p-4 space-y-3">
-        <div className="text-xs opacity-60">{fmt(post.createdAt)}</div>
         <p className="text-sm leading-relaxed whitespace-pre-wrap">{post.caption}</p>
+        <div className="text-xs opacity-60">{fmt(post.createdAt)}</div>
 
         <div className="flex items-center gap-3">
           <span className="text-xs opacity-70">
@@ -147,7 +176,7 @@ export default function PostCard({ post }: PostCardProps) {
             onClick={shareAll}
             className="inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
             type="button"
-            title="Share (caption + link)"
+            title="Share (image + caption + link)"
           >
             ⤴ Share
           </button>
