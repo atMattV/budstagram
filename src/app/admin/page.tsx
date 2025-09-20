@@ -11,16 +11,17 @@ type Post = {
 }
 
 const MAX_DIM = 1920
-const QUALITY = 0.82
+const JPEG_Q = 0.86
+const WEBP_Q = 0.82
+const ENCODE_TIMEOUT = 3000 // ms
 
 async function downscaleImage(file: File): Promise<File> {
   if (!file.type.startsWith('image/')) return file
 
   const url = URL.createObjectURL(file)
   try {
-    // Decode via object URL (faster + more reliable than FileReader base64)
+    // Decode via object URL (reliable for big gallery files)
     const img = new Image()
-    // hint decoders to work off-thread when supported
     ;(img as any).decoding = 'async'
     const loaded = new Promise<void>((res, rej) => {
       img.onload = () => res()
@@ -28,9 +29,7 @@ async function downscaleImage(file: File): Promise<File> {
     })
     img.src = url
     await loaded
-    if ('decode' in img) {
-      try { await (img as any).decode() } catch { /* Safari sometimes throws; ignore */ }
-    }
+    if ('decode' in img) { try { await (img as any).decode() } catch {} }
 
     const w0 = (img as HTMLImageElement).naturalWidth || (img as any).width || 0
     const h0 = (img as HTMLImageElement).naturalHeight || (img as any).height || 0
@@ -49,25 +48,16 @@ async function downscaleImage(file: File): Promise<File> {
     ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(img, 0, 0, w, h)
 
-    // Encode helper with timeout (avoids "stuck" toBlob on some gallery files)
-    const encode = (type: string, q: number, timeoutMs = 8000) =>
+    const encode = (type: string, q: number) =>
       new Promise<Blob | null>((resolve) => {
         let done = false
-        const t = setTimeout(() => !done && resolve(null), timeoutMs)
-        canvas.toBlob(
-          (b) => {
-            done = true
-            clearTimeout(t)
-            resolve(b ?? null)
-          },
-          type,
-          q
-        )
+        const t = setTimeout(() => { if (!done) resolve(null) }, ENCODE_TIMEOUT)
+        canvas.toBlob((b) => { done = true; clearTimeout(t); resolve(b ?? null) }, type, q)
       })
 
-    // Try WebP first; fall back to JPEG if unsupported/slow
-    let blob = await encode('image/webp', QUALITY)
-    if (!blob) blob = await encode('image/jpeg', 0.88)
+    // Try fast JPEG first (widest support), then WebP.
+    let blob = await encode('image/jpeg', JPEG_Q)
+    if (!blob) blob = await encode('image/webp', WEBP_Q)
     if (!blob) return file
 
     const ext = blob.type === 'image/webp' ? 'webp' : 'jpg'
@@ -99,12 +89,7 @@ export default function AdminPage() {
 
   function handlePick(file: File | null) {
     setSelectedFile(file)
-    // Revoke old preview to avoid stale blob reuse
-    setPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev)
-      return file ? URL.createObjectURL(file) : null
-    })
-    // Reset inputs so choosing the same file re-triggers change
+    setPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return file ? URL.createObjectURL(file) : null })
     if (galleryInputRef.current) galleryInputRef.current.value = ''
     if (cameraInputRef.current) cameraInputRef.current.value = ''
   }
