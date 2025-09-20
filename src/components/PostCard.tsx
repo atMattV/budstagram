@@ -8,7 +8,7 @@ type PostCardProps = {
     id: string;
     imageUrl: string;
     caption: string;
-    createdAt: string;
+    createdAt: string; // ISO
     author?: string;
     verified?: boolean;
     likes: number;
@@ -45,28 +45,15 @@ export default function PostCard({ post }: PostCardProps) {
   const [alreadyLiked, setAlreadyLiked] = useState<boolean>(false);
 
   useEffect(() => {
-    const isLocal = typeof window !== 'undefined' && localStorage.getItem(storageKey) === '1';
-    if (isLocal) { setAlreadyLiked(true); return; }
-    let alive = true;
-    (async () => {
-      try {
-        const res = await fetch(`/api/posts/${post.id}/liked`, { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (alive && data.liked) {
-          setAlreadyLiked(true);
-          localStorage.setItem(storageKey, '1');
-        }
-      } catch {}
-    })();
-    return () => { alive = false; };
-  }, [post.id, storageKey]);
+    if (typeof window === 'undefined') return;
+    if (localStorage.getItem(storageKey) === '1') setAlreadyLiked(true);
+  }, [storageKey]);
 
   async function handleLike() {
     if (liking || alreadyLiked) return;
     setLiking(true);
     const prev = likes;
-    setLikes(prev + 1);
+    setLikes(prev + 1); // optimistic
     try {
       const res = await fetch(`/api/posts/${post.id}/like`, { method: 'POST' });
       if (!res.ok) throw new Error('failed');
@@ -81,23 +68,30 @@ export default function PostCard({ post }: PostCardProps) {
     }
   }
 
-  // ONE BUTTON: force caption + link in the message; preview image comes from OG at /p/:id
+  // Share: force message body to include caption + URL (no `url` param).
+  // Preview image + text comes from OG tags on /p/[id].
   async function shareAll() {
     const prettyPage = `${getOrigin()}/p/${post.id}`;
     const text = [post.caption?.trim() || '', prettyPage].filter(Boolean).join('\n\n');
 
-    // Use only `text` (NO `url`) — WA/others drop text when `url` is present.
-    if ('share' in navigator) {
-      try {
+    try {
+      if (typeof navigator !== 'undefined' && 'share' in navigator) {
         await (navigator as any).share({ title: 'Budstagram', text });
         return;
-      } catch {}
+      }
+    } catch {
+      // fall through to WA fallback
     }
 
-    // Fallback: WhatsApp Web/App with prefilled text
     const encoded = encodeURIComponent(text);
-    const href = isMobileUA() ? `whatsapp://send?text=${encoded}` : `https://wa.me/?text=${encoded}`;
-    try { window.location.href = href; } catch { window.open(`https://wa.me/?text=${encoded}`, '_blank', 'noopener,noreferrer'); }
+    const href = isMobileUA()
+      ? `whatsapp://send?text=${encoded}`
+      : `https://wa.me/?text=${encoded}`;
+    try {
+      window.location.href = href;
+    } catch {
+      window.open(`https://wa.me/?text=${encoded}`, '_blank', 'noopener,noreferrer');
+    }
   }
 
   return (
@@ -135,7 +129,9 @@ export default function PostCard({ post }: PostCardProps) {
         <p className="text-sm leading-relaxed whitespace-pre-wrap">{post.caption}</p>
 
         <div className="flex items-center gap-3">
-          <span className="text-xs opacity-70">{likes} {likes === 1 ? 'like' : 'likes'}</span>
+          <span className="text-xs opacity-70">
+            {likes} {likes === 1 ? 'like' : 'likes'}
+          </span>
           <button
             onClick={handleLike}
             disabled={liking || alreadyLiked}
