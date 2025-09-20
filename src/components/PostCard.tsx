@@ -22,6 +22,16 @@ function fmt(dtISO: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(d);
 }
 
+function isMobileUA(): boolean {
+  const ua =
+    typeof globalThis !== 'undefined' &&
+    (globalThis as any).navigator &&
+    typeof (globalThis as any).navigator.userAgent === 'string'
+      ? ((globalThis as any).navigator.userAgent as string)
+      : '';
+  return /Android|iPhone|iPad|iPod/i.test(ua);
+}
+
 export default function PostCard({ post }: PostCardProps) {
   const author = post.author ?? 'The Chisp';
   const verified = post.verified ?? true;
@@ -79,8 +89,7 @@ export default function PostCard({ post }: PostCardProps) {
     }
     // Fallback: WhatsApp Web / App (guarantees text+url)
     const encoded = encodeURIComponent([text, prettyPage].filter(Boolean).join('\n\n'));
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    const href = isMobile ? `whatsapp://send?text=${encoded}` : `https://wa.me/?text=${encoded}`;
+    const href = isMobileUA() ? `whatsapp://send?text=${encoded}` : `https://wa.me/?text=${encoded}`;
     try { window.location.href = href; } catch { window.open(`https://wa.me/?text=${encoded}`, '_blank', 'noopener,noreferrer'); }
   }
 
