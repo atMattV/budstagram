@@ -71,13 +71,9 @@ export default function PostCard({ post }: PostCardProps) {
     }
   }
 
-  // ---- Share helpers ----
   function fileNameFromUrl(url: string, fallback: string) {
-    try {
-      const u = new URL(url);
-      const name = u.pathname.split('/').filter(Boolean).pop();
-      return name || fallback;
-    } catch { return fallback; }
+    try { const u = new URL(url); const name = u.pathname.split('/').filter(Boolean).pop(); return name || fallback; }
+    catch { return fallback; }
   }
 
   async function fetchImageFile(url: string, fallbackName: string): Promise<File | null> {
@@ -91,33 +87,31 @@ export default function PostCard({ post }: PostCardProps) {
     } catch { return null; }
   }
 
-  // EXACT OUTPUT: image file + post text + pretty link. No `url` field.
+  // Share EXACTLY: image file + caption + pretty link.
   async function shareNative() {
+    const prettyPage = `${PRETTY_ORIGIN}/p/${post.id}`;
+    const text = [post.caption || '', prettyPage].filter(Boolean).join('\n\n');
     try {
-      const prettyPage = `${PRETTY_ORIGIN}/p/${post.id}`;
-      const textParts = [];
-      if (post.caption) textParts.push(post.caption);
-      textParts.push(prettyPage);
-      const text = textParts.join('\n\n');
-
       const file = await fetchImageFile(post.imageUrl, `bud_${post.id}.jpg`);
       const canAttach = file && (navigator as any).canShare?.({ files: [file] });
 
-      const shareData: ShareData = canAttach
-        ? ({ text, files: [file as File] } as any)   // attach image + text
-        : ({ text } as ShareData);                   // fallback: text only (no URL field)
-
+      // Primary attempt: files + text + url (best effort across targets)
       if ('share' in navigator) {
+        const shareData: ShareData = canAttach
+          ? ({ text, url: prettyPage, files: [file as File] } as any)
+          : ({ text, url: prettyPage } as ShareData);
+
         await (navigator as any).share(shareData);
-      } else {
-        setShareOpen(true);
+        return;
       }
+
+      // Fallback sheet
+      setShareOpen(true);
     } catch {
       setShareOpen(true);
     }
   }
 
-  // Fallbacks (web cannot attach an image programmatically)
   function openFacebookDialog() {
     const prettyPage = `${PRETTY_ORIGIN}/p/${post.id}`;
     const href = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(prettyPage)}`;
@@ -230,11 +224,10 @@ export default function PostCard({ post }: PostCardProps) {
                   <button onClick={() => { setShareOpen(false); openFacebookDialog(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Facebook</button>
                   <button onClick={() => { setShareOpen(false); shareWhatsAppWeb(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">WhatsApp (Web)</button>
                   <button onClick={() => { setShareOpen(false); shareWhatsAppApp(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">WhatsApp (App)</button>
-                  <button onClick={() => { setShareOpen(false); shareNative(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Instagram (system share)</button>
-                  <button onClick={async () => { await copyLink(); setShareOpen(false); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 col-span-2" type="button">
+                  <button onClick={() => { setShareOpen(false); copyLink(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 col-span-2" type="button">
                     {copied ? 'Link copied ✓' : 'Copy post link'}
                   </button>
-                  <button onClick={async () => { await downloadImage(); setShareOpen(false); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 col-span-2" type="button">Download image</button>
+                  <button onClick={() => { setShareOpen(false); downloadImage(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 col-span-2" type="button">Download image</button>
                 </div>
                 <div className="p-2">
                   <button onClick={() => setShareOpen(false)} className="w-full rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Close</button>
