@@ -28,8 +28,6 @@ export default function PostCard({ post }: PostCardProps) {
 
   const [likes, setLikes] = useState<number>(post.likes);
   const [liking, setLiking] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const storageKey = useMemo(() => `liked:${post.id}`, [post.id]);
   const [alreadyLiked, setAlreadyLiked] = useState<boolean>(false);
@@ -71,86 +69,19 @@ export default function PostCard({ post }: PostCardProps) {
     }
   }
 
-  function fileNameFromUrl(url: string, fallback: string) {
-    try { const u = new URL(url); const name = u.pathname.split('/').filter(Boolean).pop(); return name || fallback; }
-    catch { return fallback; }
-  }
-
-  async function fetchImageFile(url: string, fallbackName: string): Promise<File | null> {
-    try {
-      const r = await fetch(url, { cache: 'no-store', mode: 'cors' });
-      if (!r.ok) return null;
-      const b = await r.blob();
-      const name = fileNameFromUrl(url, fallbackName);
-      const type = b.type || 'image/jpeg';
-      return new File([b], name, { type, lastModified: Date.now() });
-    } catch { return null; }
-  }
-
-  // SINGLE BUTTON: share IMAGE + CAPTION + PRETTY LINK (no 'url' field, link is in the text).
+  // Share via URL (OG provides image + text in preview)
   async function shareAll() {
     const prettyPage = `${PRETTY_ORIGIN}/p/${post.id}`;
-    const text = [post.caption || '', prettyPage].filter(Boolean).join('\n\n');
-
-    try {
-      const file = await fetchImageFile(post.imageUrl, `bud_${post.id}.jpg`);
-      const canAttach = file && (navigator as any).canShare?.({ files: [file] });
-
-      if ('share' in navigator && canAttach) {
-        await (navigator as any).share({ text, files: [file as File] }); // image + text+link in one payload
-        return;
-      }
-      if ('share' in navigator) {
-        await (navigator as any).share({ text }); // last resort if files not supported
-        return;
-      }
-      setShareOpen(true);
-    } catch {
-      setShareOpen(true);
+    const text = post.caption?.trim() || '';
+    if ('share' in navigator) {
+      await (navigator as any).share({ title: 'Budstagram', text, url: prettyPage });
+      return;
     }
-  }
-
-  function openFacebookDialog() {
-    const prettyPage = `${PRETTY_ORIGIN}/p/${post.id}`;
-    const href = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(prettyPage)}`;
-    window.open(href, '_blank', 'noopener,noreferrer');
-  }
-
-  function shareWhatsAppWeb() {
-    const prettyPage = `${PRETTY_ORIGIN}/p/${post.id}`;
-    const text = encodeURIComponent(`${post.caption || ''}\n\n${prettyPage}`);
-    window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer');
-  }
-
-  function shareWhatsAppApp() {
-    const prettyPage = `${PRETTY_ORIGIN}/p/${post.id}`;
-    const text = encodeURIComponent(`${post.caption || ''}\n\n${prettyPage}`);
-    window.location.href = `whatsapp://send?text=${text}`;
-  }
-
-  async function copyLink() {
-    try {
-      const prettyPage = `${PRETTY_ORIGIN}/p/${post.id}`;
-      await navigator.clipboard.writeText(prettyPage);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {}
-  }
-
-  async function downloadImage() {
-    try {
-      const r = await fetch(post.imageUrl, { cache: 'no-store' });
-      if (!r.ok) return;
-      const b = await r.blob();
-      const url = URL.createObjectURL(b);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileNameFromUrl(post.imageUrl, `bud_${post.id}.jpg`);
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch {}
+    // Fallback: WhatsApp Web / App (guarantees text+url)
+    const encoded = encodeURIComponent([text, prettyPage].filter(Boolean).join('\n\n'));
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const href = isMobile ? `whatsapp://send?text=${encoded}` : `https://wa.me/?text=${encoded}`;
+    try { window.location.href = href; } catch { window.open(`https://wa.me/?text=${encoded}`, '_blank', 'noopener,noreferrer'); }
   }
 
   return (
@@ -200,37 +131,14 @@ export default function PostCard({ post }: PostCardProps) {
             <span>{alreadyLiked ? 'Liked' : (liking ? 'Liking…' : 'Like')}</span>
           </button>
 
-          {/* Share */}
-          <div className="relative">
-            <button
-              onClick={shareAll}
-              className="inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={shareOpen}
-              title="Share image + caption + link"
-            >
-              ⤴ Share
-            </button>
-
-            {shareOpen && (
-              <div className="absolute z-10 mt-2 w-64 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg p-2" role="menu">
-                <div className="px-2 pb-2 text-xs opacity-70">Fallback</div>
-                <div className="grid grid-cols-2 gap-2 p-2">
-                  <button onClick={() => { setShareOpen(false); openFacebookDialog(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Facebook</button>
-                  <button onClick={() => { setShareOpen(false); shareWhatsAppWeb(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">WhatsApp (Web)</button>
-                  <button onClick={() => { setShareOpen(false); shareWhatsAppApp(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">WhatsApp (App)</button>
-                  <button onClick={async () => { await copyLink(); setShareOpen(false); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 col-span-2" type="button">
-                    {copied ? 'Link copied ✓' : 'Copy post link'}
-                  </button>
-                  <button onClick={async () => { await downloadImage(); setShareOpen(false); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 col-span-2" type="button">Download image</button>
-                </div>
-                <div className="p-2">
-                  <button onClick={() => setShareOpen(false)} className="w-full rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Close</button>
-                </div>
-              </div>
-            )}
-          </div>
+          <button
+            onClick={shareAll}
+            className="inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+            type="button"
+            title="Share (OG preview)"
+          >
+            ⤴ Share
+          </button>
         </div>
       </div>
     </article>
