@@ -1,17 +1,14 @@
 import { prisma } from '@/lib/db'
 
-export const runtime = 'nodejs'            // Prisma is NOT edge-safe
+export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function GET(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const post = await prisma.post.findUnique({
     where: { id: params.id },
     select: { imageUrl: true },
   })
-  if (!post) return new Response('Not found', { status: 404 })
+  if (!post?.imageUrl) return new Response('Not found', { status: 404 })
 
   const upstream = await fetch(post.imageUrl, { cache: 'no-store' })
   if (!upstream.ok || !upstream.body) return new Response('Bad image', { status: 502 })
