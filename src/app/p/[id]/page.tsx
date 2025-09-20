@@ -1,47 +1,51 @@
-import { prisma } from '@/lib/db'
-import type { Metadata } from 'next'
-import { headers } from 'next/headers'
+import { prisma } from '@/lib/db';
+import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
-type Params = { params: { id: string } }
+type Params = { params: { id: string } };
 
 async function getPost(id: string) {
   return prisma.post.findUnique({
     where: { id },
-    select: { id: true, caption: true, createdAt: true, author: true, verified: true, imageUrl: true },
-  })
+    select: { id: true, caption: true, createdAt: true, author: true, verified: true },
+  });
 }
 
 function getOriginFromHeaders() {
-  const h = headers()
-  const host = h.get('x-forwarded-host') ?? h.get('host') ?? ''
-  const proto = h.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https')
-  return host ? `${proto}://${host}` : ''
+  const h = headers();
+  const host = h.get('x-forwarded-host') ?? h.get('host') ?? '';
+  const proto = h.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https');
+  return host ? `${proto}://${host}` : '';
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const post = await getPost(params.id)
-  if (!post) return { title: 'Post not found' }
+  const post = await getPost(params.id);
+  if (!post) return { title: 'Post not found', robots: { index: false, follow: false } };
 
-  const origin = getOriginFromHeaders()
-  const pageUrl = `${origin}/p/${post.id}`
-  // Edge OG route renders a PNG from the real image URL; scrapers love PNG.
-  const ogImage = `${origin}/og/${post.id}.png?src=${encodeURIComponent(post.imageUrl)}`
-  const title = 'Budstagram'
-  const description = (post.caption || '').slice(0, 180)
+  const origin = getOriginFromHeaders();
+  const pageUrl = `${origin}/p/${post.id}`;
+  const ogImage = `${origin}/img/${post.id}.jpg`; // clean .jpg URL
+
+  const title = 'Budstagram';
+  const description = (post.caption || '').slice(0, 180);
 
   return {
+    metadataBase: new URL(origin),
     title,
     description,
+    alternates: { canonical: pageUrl },
+    robots: { index: true, follow: true },
     openGraph: {
       siteName: 'Budstagram',
       title,
       description,
       type: 'article',
       url: pageUrl,
-      images: [{ url: ogImage, width: 1200, height: 630, type: 'image/png' }],
+      images: [{ url: ogImage, width: 1200, height: 630, type: 'image/jpeg' }],
     },
     twitter: {
       card: 'summary_large_image',
@@ -49,25 +53,24 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       description,
       images: [ogImage],
     },
-    alternates: { canonical: pageUrl },
-  }
+  };
 }
 
 function fmt(dt: Date) {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(dt)
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(dt);
 }
 
 export default async function Page({ params }: Params) {
-  const post = await getPost(params.id)
-  if (!post) return <main className="max-w-md mx-auto p-6">Not found</main>
+  const post = await getPost(params.id);
+  if (!post) return <main className="max-w-md mx-auto p-6">Not found</main>;
 
-  const author = post.author ?? 'The Chisp'
-  const verified = post.verified ?? true
+  const author = post.author ?? 'The Chisp';
+  const verified = post.verified ?? true;
 
   return (
     <main className="max-w-md mx-auto p-4">
       <article className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm">
-        {/* header (matches feed) */}
+        {/* header */}
         <div className="flex items-center gap-3 p-3">
           <div className="h-8 w-8 rounded-full bg-neutral-300 dark:bg-neutral-700 flex items-center justify-center text-xs font-bold">
             {author.charAt(0).toUpperCase()}
@@ -85,7 +88,7 @@ export default async function Page({ params }: Params) {
 
         {/* image */}
         <img
-          src={post.imageUrl}
+          src={`/img/${post.id}.jpg`}
           alt={post.caption || 'Budstagram post'}
           className="w-full object-cover aspect-square"
         />
@@ -97,5 +100,5 @@ export default async function Page({ params }: Params) {
         </div>
       </article>
     </main>
-  )
+  );
 }
