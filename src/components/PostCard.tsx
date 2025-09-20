@@ -87,26 +87,24 @@ export default function PostCard({ post }: PostCardProps) {
     } catch { return null; }
   }
 
-  // 1) Default: share TEXT + PRETTY LINK (ensures caption actually shows)
-  async function shareTextOnly() {
+  // SINGLE BUTTON: share IMAGE + CAPTION + PRETTY LINK (no 'url' field, link is in the text).
+  async function shareAll() {
     const prettyPage = `${PRETTY_ORIGIN}/p/${post.id}`;
     const text = [post.caption || '', prettyPage].filter(Boolean).join('\n\n');
-    if ('share' in navigator) {
-      await (navigator as any).share({ text }); // no 'url' -> text isn't swallowed
-    } else {
-      setShareOpen(true);
-    }
-  }
 
-  // 2) Optional: share IMAGE + TEXT + PRETTY LINK (some targets may drop text)
-  async function shareWithImage() {
-    const prettyPage = `${PRETTY_ORIGIN}/p/${post.id}`;
-    const text = [post.caption || '', prettyPage].filter(Boolean).join('\n\n');
     try {
       const file = await fetchImageFile(post.imageUrl, `bud_${post.id}.jpg`);
       const canAttach = file && (navigator as any).canShare?.({ files: [file] });
-      if (!('share' in navigator) || !canAttach) { setShareOpen(true); return; }
-      await (navigator as any).share({ text, files: [file as File] }); // no 'url' field by design
+
+      if ('share' in navigator && canAttach) {
+        await (navigator as any).share({ text, files: [file as File] }); // image + text+link in one payload
+        return;
+      }
+      if ('share' in navigator) {
+        await (navigator as any).share({ text }); // last resort if files not supported
+        return;
+      }
+      setShareOpen(true);
     } catch {
       setShareOpen(true);
     }
@@ -203,29 +201,20 @@ export default function PostCard({ post }: PostCardProps) {
           </button>
 
           {/* Share */}
-          <div className="relative flex gap-2">
+          <div className="relative">
             <button
-              onClick={shareTextOnly}
+              onClick={shareAll}
               className="inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
               type="button"
               aria-haspopup="menu"
+              aria-expanded={shareOpen}
+              title="Share image + caption + link"
             >
               ⤴ Share
             </button>
-            <button
-              onClick={shareWithImage}
-              className="inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-              type="button"
-              title="Share image + text + link"
-            >
-              🖼️+
-            </button>
 
             {shareOpen && (
-              <div
-                className="absolute z-10 mt-10 w-64 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg p-2"
-                role="menu"
-              >
+              <div className="absolute z-10 mt-2 w-64 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg p-2" role="menu">
                 <div className="px-2 pb-2 text-xs opacity-70">Fallback</div>
                 <div className="grid grid-cols-2 gap-2 p-2">
                   <button onClick={() => { setShareOpen(false); openFacebookDialog(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Facebook</button>
