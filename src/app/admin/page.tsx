@@ -13,59 +13,106 @@ type Post = {
 const MAX_DIM = 1920
 const JPEG_Q = 0.86
 const WEBP_Q = 0.82
-const ENCODE_TIMEOUT = 3000 // ms
+const ENCODE_TIMEOUT = 2500   // per-encode cap (ms)
+const OVERALL_TIMEOUT = 5000  // whole pipeline cap (ms)
 
-async function downscaleImage(file: File): Promise<File> {
-  if (!file.type.startsWith('image/')) return file
+function isHeicLike(type: string) {
+  const t = type.toLowerCase()
+  return t.includes('heic') || t.includes('heif')
+}
 
-  const url = URL.createObjectURL(file)
-  try {
-    // Decode via object URL (reliable for big gallery files)
-    const img = new Image()
-    ;(img as any).decoding = 'async'
-    const loaded = new Promise<void>((res, rej) => {
-      img.onload = () => res()
-      img.onerror = rej
-    })
-    img.src = url
-    await loaded
-    if ('decode' in img) { try { await (img as any).decode() } catch {} }
+async function toBlobWithTimeout(
+  canvas: HTMLCanvasElement,
+  type: string,
+  q: number,
+  timeoutMs: number
+): Promise<Blob | null> {
+  return new Promise<Blob | null>((resolve) => {
+    let done = false
+    const t = setTimeout(() => { if (!done) resolve(null) }, timeoutMs)
+    canvas.toBlob((b) => { done = true; clearTimeout(t); resolve(b ?? null) }, type, q)
+  })
+}
 
-    const w0 = (img as HTMLImageElement).naturalWidth || (img as any).width || 0
-    const h0 = (img as HTMLImageElement).naturalHeight || (img as any).height || 0
-    if (!w0 || !h0) return file
+async function downscaleOnce(file: File): Promise<File> {
+  // Bypass formats Canvas chokes on (common in galleries)
+  if (!file.type.startsWith('image/') || isHeicLike(file.type)) return file
 
-    const scale = Math.min(1, MAX_DIM / Math.max(w0, h0))
-    const w = Math.max(1, Math.round(w0 * scale))
-    const h = Math.max(1, Math.round(h0 * scale))
+  // Try ImageBitmap first (handles EXIF with imageOrientation)
+  let bmp: ImageBitmap | null = null
+  if ('createImageBitmap' in window) {
+    try {
+      // @ts-ignore: older TS lib doesn’t know this option
+      bmp = await createImageBitmap(file, { imageOrientation: 'from-image' })
+    } catch {
+      bmp = null
+    }
+  }
 
-    const canvas = document.createElement('canvas')
-    canvas.width = w
-    canvas.height = h
-    const ctx = canvas.getContext('2d', { alpha: false })
-    if (!ctx) return file
+  let w0 = 0, h0 = 0
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d', { alpha: false })
+  if (!ctx) return file
+
+  if (bmp) {
+    w0 = bmp.width; h0 = bmp.height
+  } else {
+    const url = URL.createObjectURL(file)
+    try {
+      const img = new Image()
+      ;(img as any).decoding = 'async'
+      const loaded = new Promise<void>((res, rej) => {
+        img.onload = () => res()
+        img.onerror = rej
+      })
+      img.src = url
+      await loaded
+      if ('decode' in img) { try { await (img as any).decode() } catch {} }
+      w0 = (img as HTMLImageElement).naturalWidth || (img as any).width || 0
+      h0 = (img as HTMLImageElement).naturalHeight || (img as any).height || 0
+      if (!w0 || !h0) return file
+      const scale = Math.min(1, MAX_DIM / Math.max(w0, h0))
+      const w = Math.max(1, Math.round(w0 * scale))
+      const h = Math.max(1, Math.round(h0 * scale))
+      canvas.width = w; canvas.height = h
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(img, 0, 0, w, h)
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  }
+
+  if (bmp) {
+    const scale = Math.min(1, MAX_DIM / Math.max(bmp.width, bmp.height))
+    const w = Math.max(1, Math.round(bmp.width * scale))
+    const h = Math.max(1, Math.round(bmp.height * scale))
+    canvas.width = w; canvas.height = h
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = 'high'
-    ctx.drawImage(img, 0, 0, w, h)
-
-    const encode = (type: string, q: number) =>
-      new Promise<Blob | null>((resolve) => {
-        let done = false
-        const t = setTimeout(() => { if (!done) resolve(null) }, ENCODE_TIMEOUT)
-        canvas.toBlob((b) => { done = true; clearTimeout(t); resolve(b ?? null) }, type, q)
-      })
-
-    // Try fast JPEG first (widest support), then WebP.
-    let blob = await encode('image/jpeg', JPEG_Q)
-    if (!blob) blob = await encode('image/webp', WEBP_Q)
-    if (!blob) return file
-
-    const ext = blob.type === 'image/webp' ? 'webp' : 'jpg'
-    const name = `bud_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-    return new File([blob], name, { type: blob.type, lastModified: Date.now() })
-  } finally {
-    URL.revokeObjectURL(url)
+    ctx.drawImage(bmp, 0, 0, w, h)
+    try { bmp.close() } catch {}
   }
+
+  // Encode JPEG first (fastest/widest), then WebP
+  let blob = await toBlobWithTimeout(canvas, 'image/jpeg', JPEG_Q, ENCODE_TIMEOUT)
+  if (!blob) blob = await toBlobWithTimeout(canvas, 'image/webp', WEBP_Q, ENCODE_TIMEOUT)
+  if (!blob) return file
+
+  // If larger than original, keep original
+  if (blob.size >= file.size) return file
+
+  const ext = blob.type === 'image/webp' ? 'webp' : 'jpg'
+  const name = `bud_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+  return new File([blob], name, { type: blob.type, lastModified: Date.now() })
+}
+
+async function downscaleImage(file: File): Promise<File> {
+  // Whole pipeline guard: if *anything* stalls > OVERALL_TIMEOUT, return original
+  return await Promise.race([
+    downscaleOnce(file),
+    new Promise<File>((resolve) => setTimeout(() => resolve(file), OVERALL_TIMEOUT)),
+  ])
 }
 
 export default function AdminPage() {
@@ -106,11 +153,7 @@ export default function AdminPage() {
     formData.append('file', optimized, optimized.name)
     formData.append('caption', caption)
 
-    const res = await fetch('/api/upload', {
-      method: 'POST',
-      body: formData,
-      cache: 'no-store',
-    })
+    const res = await fetch('/api/upload', { method: 'POST', body: formData, cache: 'no-store' })
     if (res.ok) {
       setStatus('Post created!')
       setCaption('')
@@ -157,18 +200,10 @@ export default function AdminPage() {
 
         {/* Controls */}
         <div className="flex flex-wrap gap-3 mb-3">
-          <button
-            type="button"
-            onClick={() => galleryInputRef.current?.click()}
-            className="px-4 py-2 rounded bg-neutral-200 dark:bg-neutral-700"
-          >
+          <button type="button" onClick={() => galleryInputRef.current?.click()} className="px-4 py-2 rounded bg-neutral-200 dark:bg-neutral-700">
             Choose from gallery
           </button>
-          <button
-            type="button"
-            onClick={() => cameraInputRef.current?.click()}
-            className="px-4 py-2 rounded bg-blue-500 text-white"
-          >
+          <button type="button" onClick={() => cameraInputRef.current?.click()} className="px-4 py-2 rounded bg-blue-500 text-white">
             Take photo (camera)
           </button>
         </div>
@@ -190,11 +225,7 @@ export default function AdminPage() {
             placeholder="Write a caption..."
             className="w-full p-2 rounded border border-neutral-700 bg-neutral-900 text-white placeholder-white/60"
           />
-          <button
-            type="submit"
-            disabled={!selectedFile}
-            className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-50"
-          >
+          <button type="submit" disabled={!selectedFile} className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-50">
             Post
           </button>
         </form>
@@ -207,20 +238,13 @@ export default function AdminPage() {
         <ul className="space-y-4">
           {posts.map((post) => (
             <li key={post.id} className="border p-3 rounded flex flex-col gap-2">
-              <img
-                src={post.imageUrl}
-                alt={post.caption}
-                className="w-full aspect-square object-cover rounded"
-              />
+              <img src={post.imageUrl} alt={post.caption} className="w-full aspect-square object-cover rounded" />
               <p className="text-sm">{post.caption}</p>
               <div className="flex justify-between items-center text-xs opacity-70">
                 <span>{new Date(post.createdAt).toLocaleString()}</span>
                 <span>{post.likes} {post.likes === 1 ? 'like' : 'likes'}</span>
               </div>
-              <button
-                onClick={() => handleDelete(post.id)}
-                className="self-end mt-2 px-3 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600"
-              >
+              <button onClick={() => handleDelete(post.id)} className="self-end mt-2 px-3 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600">
                 Delete
               </button>
             </li>
