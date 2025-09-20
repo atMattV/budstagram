@@ -13,67 +13,61 @@ type Post = {
 const MAX_DIM = 1920
 const JPEG_Q = 0.86
 const WEBP_Q = 0.82
-const ENCODE_TIMEOUT = 2500   // per-encode cap (ms)
-const OVERALL_TIMEOUT = 5000  // whole pipeline cap (ms)
+const ENCODE_TIMEOUT = 2500   // per encode
+const OVERALL_TIMEOUT = 5000  // whole pipeline cap
 
-function isHeicLike(type: string) {
-  const t = type.toLowerCase()
-  return t.includes('heic') || t.includes('heif')
-}
+const isHeicLike = (t: string) => /heic|heif/i.test(t)
 
-async function toBlobWithTimeout(
+const toBlobWithTimeout = (
   canvas: HTMLCanvasElement,
   type: string,
   q: number,
   timeoutMs: number
-): Promise<Blob | null> {
-  return new Promise<Blob | null>((resolve) => {
-    let done = false
-    const t = setTimeout(() => { if (!done) resolve(null) }, timeoutMs)
-    canvas.toBlob((b) => { done = true; clearTimeout(t); resolve(b ?? null) }, type, q)
-  })
-}
+) => new Promise<Blob | null>((resolve) => {
+  let done = false
+  const t = setTimeout(() => { if (!done) resolve(null) }, timeoutMs)
+  canvas.toBlob((b) => { done = true; clearTimeout(t); resolve(b ?? null) }, type, q)
+})
 
 async function downscaleOnce(file: File): Promise<File> {
-  // Bypass formats Canvas chokes on (common in galleries)
   if (!file.type.startsWith('image/') || isHeicLike(file.type)) return file
 
-  // Try ImageBitmap first (handles EXIF with imageOrientation)
   let bmp: ImageBitmap | null = null
   if ('createImageBitmap' in window) {
     try {
-      // @ts-ignore: older TS lib doesn’t know this option
+      // @ts-ignore legacy TS lib
       bmp = await createImageBitmap(file, { imageOrientation: 'from-image' })
-    } catch {
-      bmp = null
-    }
+    } catch { bmp = null }
   }
 
-  let w0 = 0, h0 = 0
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d', { alpha: false })
   if (!ctx) return file
 
   if (bmp) {
-    w0 = bmp.width; h0 = bmp.height
+    const s = Math.min(1, MAX_DIM / Math.max(bmp.width, bmp.height))
+    const w = Math.max(1, Math.round(bmp.width * s))
+    const h = Math.max(1, Math.round(bmp.height * s))
+    canvas.width = w; canvas.height = h
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(bmp, 0, 0, w, h)
+    try { bmp.close() } catch {}
   } else {
     const url = URL.createObjectURL(file)
     try {
       const img = new Image()
       ;(img as any).decoding = 'async'
-      const loaded = new Promise<void>((res, rej) => {
-        img.onload = () => res()
-        img.onerror = rej
-      })
+      const loaded = new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = rej })
       img.src = url
       await loaded
-      if ('decode' in img) { try { await (img as any).decode() } catch {} }
-      w0 = (img as HTMLImageElement).naturalWidth || (img as any).width || 0
-      h0 = (img as HTMLImageElement).naturalHeight || (img as any).height || 0
+      try { await (img as any).decode?.() } catch {}
+      const w0 = (img as HTMLImageElement).naturalWidth || (img as any).width || 0
+      const h0 = (img as HTMLImageElement).naturalHeight || (img as any).height || 0
       if (!w0 || !h0) return file
-      const scale = Math.min(1, MAX_DIM / Math.max(w0, h0))
-      const w = Math.max(1, Math.round(w0 * scale))
-      const h = Math.max(1, Math.round(h0 * scale))
+      const s = Math.min(1, MAX_DIM / Math.max(w0, h0))
+      const w = Math.max(1, Math.round(w0 * s))
+      const h = Math.max(1, Math.round(h0 * s))
       canvas.width = w; canvas.height = h
       ctx.imageSmoothingEnabled = true
       ctx.imageSmoothingQuality = 'high'
@@ -83,23 +77,12 @@ async function downscaleOnce(file: File): Promise<File> {
     }
   }
 
-  if (bmp) {
-    const scale = Math.min(1, MAX_DIM / Math.max(bmp.width, bmp.height))
-    const w = Math.max(1, Math.round(bmp.width * scale))
-    const h = Math.max(1, Math.round(bmp.height * scale))
-    canvas.width = w; canvas.height = h
-    ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = 'high'
-    ctx.drawImage(bmp, 0, 0, w, h)
-    try { bmp.close() } catch {}
-  }
-
-  // Encode JPEG first (fastest/widest), then WebP
+  // Encode JPEG first (fast), then WebP
   let blob = await toBlobWithTimeout(canvas, 'image/jpeg', JPEG_Q, ENCODE_TIMEOUT)
   if (!blob) blob = await toBlobWithTimeout(canvas, 'image/webp', WEBP_Q, ENCODE_TIMEOUT)
   if (!blob) return file
 
-  // If larger than original, keep original
+  // If optimization is pointless, keep original
   if (blob.size >= file.size) return file
 
   const ext = blob.type === 'image/webp' ? 'webp' : 'jpg'
@@ -107,13 +90,11 @@ async function downscaleOnce(file: File): Promise<File> {
   return new File([blob], name, { type: blob.type, lastModified: Date.now() })
 }
 
-async function downscaleImage(file: File): Promise<File> {
-  // Whole pipeline guard: if *anything* stalls > OVERALL_TIMEOUT, return original
-  return await Promise.race([
+const downscaleImage = (file: File) =>
+  Promise.race([
     downscaleOnce(file),
     new Promise<File>((resolve) => setTimeout(() => resolve(file), OVERALL_TIMEOUT)),
   ])
-}
 
 export default function AdminPage() {
   const [caption, setCaption] = useState('')
@@ -182,21 +163,10 @@ export default function AdminPage() {
         <h1 className="text-2xl font-bold mb-4">Add New Post</h1>
 
         {/* Hidden inputs */}
-        <input
-          ref={galleryInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => handlePick(e.target.files?.[0] || null)}
-        />
-        <input
-          ref={cameraInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={(e) => handlePick(e.target.files?.[0] || null)}
-        />
+        <input ref={galleryInputRef} type="file" accept="image/*" className="hidden"
+          onChange={(e) => handlePick(e.target.files?.[0] || null)} />
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+          onChange={(e) => handlePick(e.target.files?.[0] || null)} />
 
         {/* Controls */}
         <div className="flex flex-wrap gap-3 mb-3">
