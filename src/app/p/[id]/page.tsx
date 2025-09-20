@@ -10,7 +10,7 @@ type Params = { params: { id: string } }
 async function getPost(id: string) {
   return prisma.post.findUnique({
     where: { id },
-    select: { id: true, caption: true, createdAt: true, author: true, verified: true },
+    select: { id: true, caption: true, createdAt: true, author: true, verified: true, imageUrl: true },
   })
 }
 
@@ -27,7 +27,8 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
   const origin = getOriginFromHeaders()
   const pageUrl = `${origin}/p/${post.id}`
-  const ogImage = `${origin}/og/${post.id}.jpg` // extension matters for some scrapers
+  // Edge OG route renders a PNG from the real image URL; scrapers love PNG.
+  const ogImage = `${origin}/og/${post.id}.png?src=${encodeURIComponent(post.imageUrl)}`
   const title = 'Budstagram'
   const description = (post.caption || '').slice(0, 180)
 
@@ -40,7 +41,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       description,
       type: 'article',
       url: pageUrl,
-      images: [{ url: ogImage, width: 1080, height: 1080, type: 'image/jpeg' }],
+      images: [{ url: ogImage, width: 1200, height: 630, type: 'image/png' }],
     },
     twitter: {
       card: 'summary_large_image',
@@ -84,7 +85,7 @@ export default async function Page({ params }: Params) {
 
         {/* image */}
         <img
-          src={`/og/${post.id}.jpg`}
+          src={post.imageUrl}
           alt={post.caption || 'Budstagram post'}
           className="w-full object-cover aspect-square"
         />
