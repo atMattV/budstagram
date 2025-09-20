@@ -15,13 +15,12 @@ type PostCardProps = {
   };
 };
 
-const PRETTY_ORIGIN = 'https://budstagram.com';
-
 function fmt(dtISO: string) {
   const d = new Date(dtISO);
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(d);
 }
 
+// Safe UA check
 function isMobileUA(): boolean {
   const ua =
     typeof globalThis !== 'undefined' &&
@@ -30,6 +29,11 @@ function isMobileUA(): boolean {
       ? ((globalThis as any).navigator.userAgent as string)
       : '';
   return /Android|iPhone|iPad|iPod/i.test(ua);
+}
+
+// Use the real deployed origin (NOT a fake domain)
+function getOrigin(): string {
+  return typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '';
 }
 
 export default function PostCard({ post }: PostCardProps) {
@@ -79,15 +83,15 @@ export default function PostCard({ post }: PostCardProps) {
     }
   }
 
-  // Share via URL (OG provides image + text in preview)
+  // Share the pretty page URL; OG on /p/[id] provides image+caption preview
   async function shareAll() {
-    const prettyPage = `${PRETTY_ORIGIN}/p/${post.id}`;
+    const prettyPage = `${getOrigin()}/p/${post.id}`;
     const text = post.caption?.trim() || '';
     if ('share' in navigator) {
       await (navigator as any).share({ title: 'Budstagram', text, url: prettyPage });
       return;
     }
-    // Fallback: WhatsApp Web / App (guarantees text+url)
+    // Fallback: WA web/app
     const encoded = encodeURIComponent([text, prettyPage].filter(Boolean).join('\n\n'));
     const href = isMobileUA() ? `whatsapp://send?text=${encoded}` : `https://wa.me/?text=${encoded}`;
     try { window.location.href = href; } catch { window.open(`https://wa.me/?text=${encoded}`, '_blank', 'noopener,noreferrer'); }
