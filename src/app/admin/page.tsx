@@ -12,69 +12,70 @@ type Post = {
 
 const MAX_DIM = 1920
 const QUALITY = 0.82
-const TARGET_TYPE = 'image/webp'
 
 async function downscaleImage(file: File): Promise<File> {
   if (!file.type.startsWith('image/')) return file
 
-  // Try ImageBitmap first
-  let bmp: ImageBitmap | null = null
-  if ('createImageBitmap' in window) {
-    try { bmp = await createImageBitmap(file) } catch { bmp = null }
-  }
+  const url = URL.createObjectURL(file)
+  try {
+    // Decode via object URL (faster + more reliable than FileReader base64)
+    const img = new Image()
+    // hint decoders to work off-thread when supported
+    ;(img as any).decoding = 'async'
+    const loaded = new Promise<void>((res, rej) => {
+      img.onload = () => res()
+      img.onerror = rej
+    })
+    img.src = url
+    await loaded
+    if ('decode' in img) {
+      try { await (img as any).decode() } catch { /* Safari sometimes throws; ignore */ }
+    }
 
-  let w = 0, h = 0
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d', { alpha: false })
-  if (!ctx) return file
+    const w0 = (img as HTMLImageElement).naturalWidth || (img as any).width || 0
+    const h0 = (img as HTMLImageElement).naturalHeight || (img as any).height || 0
+    if (!w0 || !h0) return file
 
-  if (bmp) {
-    w = bmp.width; h = bmp.height
-    const scale = Math.min(1, MAX_DIM / Math.max(w, h))
-    const tw = Math.max(1, Math.round(w * scale))
-    const th = Math.max(1, Math.round(h * scale))
-    canvas.width = tw; canvas.height = th
+    const scale = Math.min(1, MAX_DIM / Math.max(w0, h0))
+    const w = Math.max(1, Math.round(w0 * scale))
+    const h = Math.max(1, Math.round(h0 * scale))
+
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d', { alpha: false })
+    if (!ctx) return file
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = 'high'
-    ctx.drawImage(bmp, 0, 0, tw, th)
-  } else {
-    // Fallback: FileReader -> <img>, with proper URL revoke
-    const dataURL = await new Promise<string>((res, rej) => {
-      const fr = new FileReader()
-      fr.onload = () => res(fr.result as string)
-      fr.onerror = rej
-      fr.readAsDataURL(file)
-    })
-    const img = await new Promise<HTMLImageElement>((res, rej) => {
-      const i = new Image()
-      i.onload = () => res(i)
-      i.onerror = rej
-      i.src = dataURL
-    })
-    w = img.naturalWidth; h = img.naturalHeight
-    const scale = Math.min(1, MAX_DIM / Math.max(w, h))
-    const tw = Math.max(1, Math.round(w * scale))
-    const th = Math.max(1, Math.round(h * scale))
-    canvas.width = tw; canvas.height = th
-    ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = 'high'
-    ctx.drawImage(img, 0, 0, tw, th)
+    ctx.drawImage(img, 0, 0, w, h)
+
+    // Encode helper with timeout (avoids "stuck" toBlob on some gallery files)
+    const encode = (type: string, q: number, timeoutMs = 8000) =>
+      new Promise<Blob | null>((resolve) => {
+        let done = false
+        const t = setTimeout(() => !done && resolve(null), timeoutMs)
+        canvas.toBlob(
+          (b) => {
+            done = true
+            clearTimeout(t)
+            resolve(b ?? null)
+          },
+          type,
+          q
+        )
+      })
+
+    // Try WebP first; fall back to JPEG if unsupported/slow
+    let blob = await encode('image/webp', QUALITY)
+    if (!blob) blob = await encode('image/jpeg', 0.88)
+    if (!blob) return file
+
+    const ext = blob.type === 'image/webp' ? 'webp' : 'jpg'
+    const name = `bud_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+    return new File([blob], name, { type: blob.type, lastModified: Date.now() })
+  } finally {
+    URL.revokeObjectURL(url)
   }
-
-  const typeSupported = (() => {
-    try {
-      return canvas.toDataURL(TARGET_TYPE).startsWith('data:image/webp')
-    } catch { return false }
-  })()
-  const outType = typeSupported ? TARGET_TYPE : 'image/jpeg'
-
-  const blob: Blob = await new Promise((res) =>
-    canvas.toBlob((b) => res(b || file), outType, QUALITY)
-  )
-
-  const ext = outType === 'image/webp' ? 'webp' : 'jpg'
-  const name = `bud_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-  return new File([blob], name, { type: outType, lastModified: Date.now() })
 }
 
 export default function AdminPage() {
@@ -98,12 +99,12 @@ export default function AdminPage() {
 
   function handlePick(file: File | null) {
     setSelectedFile(file)
-    // Always revoke previous preview URL to avoid stale blobs
+    // Revoke old preview to avoid stale blob reuse
     setPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev)
       return file ? URL.createObjectURL(file) : null
     })
-    // Reset inputs so re-selecting same image still fires change
+    // Reset inputs so choosing the same file re-triggers change
     if (galleryInputRef.current) galleryInputRef.current.value = ''
     if (cameraInputRef.current) cameraInputRef.current.value = ''
   }
