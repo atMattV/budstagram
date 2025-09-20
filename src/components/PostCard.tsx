@@ -26,16 +26,15 @@ export default function PostCard({ post }: PostCardProps) {
 
   const [likes, setLikes] = useState<number>(post.likes);
   const [liking, setLiking] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const storageKey = useMemo(() => `liked:${post.id}`, [post.id]);
   const [alreadyLiked, setAlreadyLiked] = useState<boolean>(false);
 
   useEffect(() => {
     const isLocal = typeof window !== 'undefined' && localStorage.getItem(storageKey) === '1';
-    if (isLocal) {
-      setAlreadyLiked(true);
-      return;
-    }
+    if (isLocal) { setAlreadyLiked(true); return; }
     let alive = true;
     (async () => {
       try {
@@ -54,10 +53,8 @@ export default function PostCard({ post }: PostCardProps) {
   async function handleLike() {
     if (liking || alreadyLiked) return;
     setLiking(true);
-
     const prev = likes;
     setLikes(prev + 1); // optimistic
-
     try {
       const res = await fetch(`/api/posts/${post.id}/like`, { method: 'POST' });
       if (!res.ok) throw new Error('failed');
@@ -66,14 +63,99 @@ export default function PostCard({ post }: PostCardProps) {
       localStorage.setItem(storageKey, '1');
       setAlreadyLiked(true);
     } catch {
-      setLikes(prev); // rollback
+      setLikes(prev);
     } finally {
       setLiking(false);
     }
   }
 
+  // ---- Share helpers ----
+  function fileNameFromUrl(url: string, fallback: string) {
+    try {
+      const u = new URL(url);
+      const name = u.pathname.split('/').filter(Boolean).pop();
+      return name || fallback;
+    } catch { return fallback; }
+  }
+
+  async function fetchImageFile(url: string, fallbackName: string): Promise<File | null> {
+    try {
+      const r = await fetch(url, { cache: 'no-store', mode: 'cors' });
+      if (!r.ok) return null;
+      const b = await r.blob();
+      const name = fileNameFromUrl(url, fallbackName);
+      const type = b.type || 'image/jpeg';
+      return new File([b], name, { type, lastModified: Date.now() });
+    } catch { return null; }
+  }
+
+  async function shareNative() {
+    try {
+      const file = await fetchImageFile(post.imageUrl, `bud_${post.id}.jpg`);
+      const base: ShareData = {
+        title: 'Budstagram',
+        text: post.caption || 'Budstagram',
+        url: post.imageUrl, // gives FB/WA something to use if files aren’t accepted
+      };
+      const shareData =
+        file && (navigator as any).canShare?.({ files: [file] })
+          ? { ...base, files: [file] as any }
+          : base;
+
+      if ('share' in navigator) {
+        await (navigator as any).share(shareData); // user can pick Instagram / WhatsApp (Status or chat) / Facebook, etc.
+      } else {
+        setShareOpen(true);
+      }
+    } catch {
+      setShareOpen(true);
+    }
+  }
+
+  function openFacebookDialog() {
+    // FB web share accepts a URL; preview is derived from OG tags on that URL.
+    const href = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(post.imageUrl)}`;
+    window.open(href, '_blank', 'noopener,noreferrer');
+  }
+
+  function shareWhatsAppWeb() {
+    const text = encodeURIComponent(`${post.caption || ''}\n${post.imageUrl}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer');
+  }
+
+  function shareWhatsAppApp() {
+    const text = encodeURIComponent(`${post.caption || ''}\n${post.imageUrl}`);
+    // On mobile, this opens WhatsApp; user chooses chat or Status in-app.
+    window.location.href = `whatsapp://send?text=${text}`;
+  }
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(post.imageUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  }
+
+  async function downloadImage() {
+    try {
+      const r = await fetch(post.imageUrl, { cache: 'no-store' });
+      if (!r.ok) return;
+      const b = await r.blob();
+      const url = URL.createObjectURL(b);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileNameFromUrl(post.imageUrl, `bud_${post.id}.jpg`);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {}
+  }
+
   return (
     <article className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm mb-6">
+      {/* header */}
       <div className="flex items-center gap-3 p-3">
         <div className="h-8 w-8 rounded-full bg-neutral-300 dark:bg-neutral-700 flex items-center justify-center text-xs font-bold">
           {author.charAt(0).toUpperCase()}
@@ -89,6 +171,7 @@ export default function PostCard({ post }: PostCardProps) {
         </div>
       </div>
 
+      {/* image */}
       <div className="relative aspect-square">
         <Image
           src={post.imageUrl}
@@ -99,7 +182,8 @@ export default function PostCard({ post }: PostCardProps) {
         />
       </div>
 
-      <div className="p-4 space-y-2">
+      {/* body */}
+      <div className="p-4 space-y-3">
         <div className="text-xs opacity-60">{fmt(post.createdAt)}</div>
         <p className="text-sm leading-relaxed whitespace-pre-wrap">{post.caption}</p>
 
@@ -115,6 +199,41 @@ export default function PostCard({ post }: PostCardProps) {
             <span>{alreadyLiked ? '♥' : '♡'}</span>
             <span>{alreadyLiked ? 'Liked' : (liking ? 'Liking…' : 'Like')}</span>
           </button>
+
+          {/* Share */}
+          <div className="relative">
+            <button
+              onClick={shareNative}
+              className="inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={shareOpen}
+            >
+              ⤴ Share
+            </button>
+
+            {shareOpen && (
+              <div
+                className="absolute z-10 mt-2 w-64 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg p-2"
+                role="menu"
+              >
+                <div className="px-2 pb-2 text-xs opacity-70">Fallback options</div>
+                <div className="grid grid-cols-2 gap-2 p-2">
+                  <button onClick={() => { setShareOpen(false); openFacebookDialog(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Facebook</button>
+                  <button onClick={() => { setShareOpen(false); shareWhatsAppWeb(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">WhatsApp (Web)</button>
+                  <button onClick={() => { setShareOpen(false); shareWhatsAppApp(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">WhatsApp (App)</button>
+                  <button onClick={() => { setShareOpen(false); shareNative(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Instagram (system share)</button>
+                  <button onClick={async () => { await copyLink(); setShareOpen(false); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 col-span-2" type="button">
+                    {copied ? 'Link copied ✓' : 'Copy image link'}
+                  </button>
+                  <button onClick={async () => { await downloadImage(); setShareOpen(false); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 col-span-2" type="button">Download image</button>
+                </div>
+                <div className="p-2">
+                  <button onClick={() => setShareOpen(false)} className="w-full rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Close</button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </article>
