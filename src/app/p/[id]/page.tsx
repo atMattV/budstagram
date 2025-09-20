@@ -10,7 +10,7 @@ type Params = { params: { id: string } }
 async function getPost(id: string) {
   return prisma.post.findUnique({
     where: { id },
-    select: { id: true, caption: true, createdAt: true },
+    select: { id: true, caption: true, createdAt: true, author: true, verified: true },
   })
 }
 
@@ -40,7 +40,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       description,
       type: 'article',
       url: pageUrl,
-      images: [{ url: ogImage /* width/height optional */ }],
+      images: [{ url: ogImage }],
     },
     twitter: {
       card: 'summary_large_image',
@@ -51,27 +51,48 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   }
 }
 
+function fmt(dt: Date) {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(dt)
+}
+
 export default async function Page({ params }: Params) {
   const post = await getPost(params.id)
   if (!post) return <main className="max-w-md mx-auto p-6">Not found</main>
 
+  const author = post.author ?? 'The Chisp'
+  const verified = post.verified ?? true
+
   return (
     <main className="max-w-md mx-auto p-4">
-      {/* simple, clean card matching feed style */}
       <article className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm">
-        <div className="p-4 text-xs opacity-60">
-          {new Date(post.createdAt).toLocaleString()}
+        {/* header (matches feed) */}
+        <div className="flex items-center gap-3 p-3">
+          <div className="h-8 w-8 rounded-full bg-neutral-300 dark:bg-neutral-700 flex items-center justify-center text-xs font-bold">
+            {author.charAt(0).toUpperCase()}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold">{author}</span>
+            {verified && (
+              <svg viewBox="0 0 24 24" className="h-4 w-4" aria-label="Verified">
+                <path d="M12 2l2.09 4.24L18.9 7.1l-3.1 3.02.73 4.38L12 12.77 7.47 14.5l.73-4.38L5.1 7.1l4.81-.86L12 2z" fill="#1DA1F2" />
+                <path d="M10.5 12.3l-1.7-1.7-1.1 1.1 2.8 2.8 5.2-5.2-1.1-1.1z" fill="white" />
+              </svg>
+            )}
+          </div>
         </div>
+
+        {/* image */}
         <img
           src={`/img/${post.id}`}
           alt={post.caption || 'Budstagram post'}
           className="w-full object-cover aspect-square"
         />
-        {post.caption && (
-          <div className="p-4">
-            <p className="text-sm whitespace-pre-wrap">{post.caption}</p>
-          </div>
-        )}
+
+        {/* body */}
+        <div className="p-4 space-y-3">
+          <p className="text-sm whitespace-pre-wrap">{post.caption}</p>
+          <div className="text-xs opacity-60">{fmt(post.createdAt)}</div>
+        </div>
       </article>
     </main>
   )
