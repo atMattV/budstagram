@@ -27,20 +27,20 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
   const origin = getOriginFromHeaders()
   const pageUrl = `${origin}/p/${post.id}`
-  const ogImage = `${origin}/img/${post.id}`
+  const ogImage = `${origin}/og/${post.id}.jpg` // extension matters for some scrapers
   const title = 'Budstagram'
   const description = (post.caption || '').slice(0, 180)
 
   return {
     title,
     description,
-    alternates: { canonical: pageUrl },
     openGraph: {
+      siteName: 'Budstagram',
       title,
       description,
       type: 'article',
       url: pageUrl,
-      images: [{ url: ogImage }],
+      images: [{ url: ogImage, width: 1080, height: 1080, type: 'image/jpeg' }],
     },
     twitter: {
       card: 'summary_large_image',
@@ -48,6 +48,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       description,
       images: [ogImage],
     },
+    alternates: { canonical: pageUrl },
   }
 }
 
@@ -83,7 +84,7 @@ export default async function Page({ params }: Params) {
 
         {/* image */}
         <img
-          src={`/img/${post.id}`}
+          src={`/og/${post.id}.jpg`}
           alt={post.caption || 'Budstagram post'}
           className="w-full object-cover aspect-square"
         />
