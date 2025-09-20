@@ -15,7 +15,7 @@ async function getPost(id: string) {
   });
 }
 
-function getOriginFromHeaders() {
+function originFromHeaders() {
   const h = headers();
   const host = h.get('x-forwarded-host') ?? h.get('host') ?? '';
   const proto = h.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https');
@@ -26,9 +26,9 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const post = await getPost(params.id);
   if (!post) return { title: 'Post not found', robots: { index: false, follow: false } };
 
-  const origin = getOriginFromHeaders();
+  const origin = originFromHeaders();
   const pageUrl = `${origin}/p/${post.id}`;
-  const ogImage = `${origin}/img/${post.id}.jpg`; // clean .jpg URL
+  const ogImg = `${origin}/p/${post.id}/opengraph-image`; // Next serves PNG here
 
   const title = 'Budstagram';
   const description = (post.caption || '').slice(0, 180);
@@ -45,13 +45,13 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       description,
       type: 'article',
       url: pageUrl,
-      images: [{ url: ogImage, width: 1200, height: 630, type: 'image/jpeg' }],
+      images: [{ url: ogImg, width: 1200, height: 630, type: 'image/png' }],
     },
     twitter: {
       card: 'summary_large_image',
       title,
       description,
-      images: [ogImage],
+      images: [ogImg],
     },
   };
 }
@@ -69,7 +69,7 @@ export default async function Page({ params }: Params) {
 
   return (
     <main className="max-w-md mx-auto p-4">
-      <article className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm">
+      <article className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm">
         {/* header */}
         <div className="flex items-center gap-3 p-3">
           <div className="h-8 w-8 rounded-full bg-neutral-300 dark:bg-neutral-700 flex items-center justify-center text-xs font-bold">
