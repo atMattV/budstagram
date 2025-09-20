@@ -8,7 +8,7 @@ type PostCardProps = {
     id: string;
     imageUrl: string;
     caption: string;
-    createdAt: string; // ISO from server
+    createdAt: string; // ISO
     author?: string;
     verified?: boolean;
     likes: number;
@@ -30,7 +30,7 @@ function getUA(): string {
 function isMobileUA(): boolean {
   return /Android|iPhone|iPad|iPod/i.test(getUA());
 }
-function open(href: string) {
+function openUrl(href: string) {
   try {
     const w = window.open(href, '_blank', 'noopener,noreferrer');
     if (!w) window.location.href = href;
@@ -45,8 +45,6 @@ export default function PostCard({ post }: PostCardProps) {
 
   const [likes, setLikes] = useState<number>(post.likes);
   const [liking, setLiking] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const storageKey = useMemo(() => `liked:${post.id}`, [post.id]);
   const [alreadyLiked, setAlreadyLiked] = useState<boolean>(false);
@@ -75,84 +73,35 @@ export default function PostCard({ post }: PostCardProps) {
     }
   }
 
-  // ----- Share helpers (URL-first everywhere) -----
-  function sharePayload() {
-    const url = `${getOrigin()}/p/${post.id}`; // pretty page with OG
-    const caption = (post.caption || '').trim();
-    const text = [url, caption].filter(Boolean).join('\n\n');
-    return { url, caption, text, encodedText: encodeURIComponent(text) };
-  }
+  // Single-button share: URL first (to maximize unfurl) + caption. No files. No `url` param.
+  function shareAll() {
+    const prettyPage = `${getOrigin()}/p/${post.id}`;
+    const text = [prettyPage, (post.caption || '').trim()].filter(Boolean).join('\n\n');
 
-  async function systemShare() {
-    const { text } = sharePayload();
-    // Text only (contains URL first). Most apps will still unfurl the URL.
-    if (typeof navigator !== 'undefined' && 'share' in navigator) {
-      try {
-        await (navigator as any).share({ title: 'Budstagram', text });
-        return;
-      } catch { /* fall through */ }
-    }
-    // Fallback to copy + open WA Web
-    await copyLink();
-    const { encodedText } = sharePayload();
-    open(`https://wa.me/?text=${encodedText}`);
-  }
-
-  async function copyLink() {
-    const { text } = sharePayload();
+    // Try Web Share (text only)
     try {
-      await (navigator as any)?.clipboard?.writeText?.(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
+      if (typeof navigator !== 'undefined' && 'share' in navigator) {
+        (navigator as any).share({ title: 'Budstagram', text }).catch(() => {});
+      } else {
+        // Fallback: WhatsApp Web/App
+        const encoded = encodeURIComponent(text);
+        const appURL = `whatsapp://send?text=${encoded}`;
+        const webURL = `https://wa.me/?text=${encoded}`;
+        if (isMobileUA()) {
+          try { window.location.href = appURL; } catch {}
+          setTimeout(() => { try { window.location.href = webURL; } catch { openUrl(webURL); } }, 900);
+        } else {
+          openUrl(webURL);
+        }
+      }
     } catch {
-      /* ignore */
-    }
-  }
-
-  function shareWhatsApp() {
-    const { encodedText } = sharePayload();
-    const appURL = `whatsapp://send?text=${encodedText}`;
-    const webURL = `https://wa.me/?text=${encodedText}`;
-    if (isMobileUA()) {
-      try { window.location.href = appURL; } catch {}
-      setTimeout(() => { try { window.location.href = webURL; } catch { open(webURL); } }, 900);
-    } else {
-      open(webURL);
-    }
-  }
-
-  function shareTelegram() {
-    const { url, caption } = sharePayload();
-    const href = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(caption)}`;
-    open(href);
-  }
-
-  function shareFacebook() {
-    const { url, caption } = sharePayload();
-    // FB reads OG from the URL; quote pre-fills post text.
-    const href = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&quote=${encodeURIComponent(caption)}`;
-    open(href);
-  }
-
-  function shareTwitter() {
-    const { url, caption } = sharePayload();
-    const href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(caption)}&url=${encodeURIComponent(url)}`;
-    open(href);
-  }
-
-  function shareInstagram() {
-    // No official web intent. Use system share if available, else copy text.
-    if (typeof navigator !== 'undefined' && 'share' in navigator) {
-      const { text } = sharePayload();
-      (navigator as any).share({ title: 'Budstagram', text }).catch(() => {});
-    } else {
-      copyLink();
-      alert('Text + link copied. Open Instagram and paste.');
+      // Last resort: copy to clipboard
+      try { (navigator as any)?.clipboard?.writeText?.(text); } catch {}
     }
   }
 
   return (
-    <article className="rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm mb-6">
+    <article className="rounded-2xl /* overflow-hidden REMOVED */ border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm mb-6">
       {/* header */}
       <div className="flex items-center gap-3 p-3">
         <div className="h-8 w-8 rounded-full bg-neutral-300 dark:bg-neutral-700 flex items-center justify-center text-xs font-bold">
@@ -200,41 +149,14 @@ export default function PostCard({ post }: PostCardProps) {
             <span>{alreadyLiked ? 'Liked' : (liking ? 'Liking…' : 'Like')}</span>
           </button>
 
-          {/* Share menu */}
-          <div className="relative">
-            <button
-              onClick={() => setShareOpen((v) => !v)}
-              className="inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={shareOpen}
-            >
-              ⤴ Share
-            </button>
-
-            {shareOpen && (
-              <div
-                className="absolute z-10 mt-2 w-72 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg p-2"
-                role="menu"
-              >
-                <div className="px-2 pb-2 text-xs opacity-70">Share URL + caption</div>
-                <div className="grid grid-cols-2 gap-2 p-2">
-                  <button onClick={() => { setShareOpen(false); systemShare(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">System Share</button>
-                  <button onClick={() => { setShareOpen(false); shareWhatsApp(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">WhatsApp</button>
-                  <button onClick={() => { setShareOpen(false); shareTelegram(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Telegram</button>
-                  <button onClick={() => { setShareOpen(false); shareFacebook(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Facebook</button>
-                  <button onClick={() => { setShareOpen(false); shareTwitter(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">X (Twitter)</button>
-                  <button onClick={() => { setShareOpen(false); shareInstagram(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Instagram</button>
-                  <button onClick={async () => { await copyLink(); setShareOpen(false); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 col-span-2" type="button">
-                    {copied ? 'Copied ✓' : 'Copy text + link'}
-                  </button>
-                </div>
-                <div className="p-2">
-                  <button onClick={() => setShareOpen(false)} className="w-full rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Close</button>
-                </div>
-              </div>
-            )}
-          </div>
+          <button
+            onClick={shareAll}
+            className="inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+            type="button"
+            title="Share (URL first + caption)"
+          >
+            ⤴ Share
+          </button>
         </div>
       </div>
     </article>
