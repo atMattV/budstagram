@@ -32,7 +32,6 @@ export default function PostCard({ post }: PostCardProps) {
   const storageKey = useMemo(() => `liked:${post.id}`, [post.id]);
   const [alreadyLiked, setAlreadyLiked] = useState<boolean>(false);
 
-  // Pretty paths
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const prettyImage = `/img/${post.id}`;
   const prettyPage = `${origin}/p/${post.id}`;
@@ -59,7 +58,7 @@ export default function PostCard({ post }: PostCardProps) {
     if (liking || alreadyLiked) return;
     setLiking(true);
     const prev = likes;
-    setLikes(prev + 1); // optimistic
+    setLikes(prev + 1);
     try {
       const res = await fetch(`/api/posts/${post.id}/like`, { method: 'POST' });
       if (!res.ok) throw new Error('failed');
@@ -74,7 +73,6 @@ export default function PostCard({ post }: PostCardProps) {
     }
   }
 
-  // ---- Share helpers ----
   function fileNameFromUrl(url: string, fallback: string) {
     try { const u = new URL(url); const name = u.pathname.split('/').filter(Boolean).pop(); return name || fallback; }
     catch { return fallback; }
@@ -97,7 +95,7 @@ export default function PostCard({ post }: PostCardProps) {
       const base: ShareData = {
         title: 'Budstagram',
         text: post.caption || 'Budstagram',
-        url: prettyPage, // pretty link
+        url: prettyPage,
       };
       const shareData =
         file && (navigator as any).canShare?.({ files: [file] })
@@ -177,6 +175,7 @@ export default function PostCard({ post }: PostCardProps) {
           src={prettyImage}
           alt={post.caption.slice(0, 100) || 'Budstagram post'}
           fill
+          unoptimized                      // bypass Next optimizer to avoid gray placeholder
           className="object-cover"
           sizes="(max-width: 768px) 100vw, 768px"
         />
@@ -213,19 +212,14 @@ export default function PostCard({ post }: PostCardProps) {
             </button>
 
             {shareOpen && (
-              <div
-                className="absolute z-10 mt-2 w-64 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg p-2"
-                role="menu"
-              >
+              <div className="absolute z-10 mt-2 w-64 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg p-2" role="menu">
                 <div className="px-2 pb-2 text-xs opacity-70">Fallback options</div>
                 <div className="grid grid-cols-2 gap-2 p-2">
                   <button onClick={() => { setShareOpen(false); openFacebookDialog(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Facebook</button>
                   <button onClick={() => { setShareOpen(false); shareWhatsAppWeb(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">WhatsApp (Web)</button>
                   <button onClick={() => { setShareOpen(false); shareWhatsAppApp(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">WhatsApp (App)</button>
                   <button onClick={() => { setShareOpen(false); shareNative(); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" type="button">Instagram (system share)</button>
-                  <button onClick={async () => { await copyLink(); setShareOpen(false); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 col-span-2" type="button">
-                    {copied ? 'Link copied ✓' : 'Copy post link'}
-                  </button>
+                  <button onClick={async () => { await copyLink(); setShareOpen(false); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 col-span-2" type="button">{copied ? 'Link copied ✓' : 'Copy post link'}</button>
                   <button onClick={async () => { await downloadImage(); setShareOpen(false); }} className="rounded border px-2 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 col-span-2" type="button">Download image</button>
                 </div>
                 <div className="p-2">
