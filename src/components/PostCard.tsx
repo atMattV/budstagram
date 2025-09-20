@@ -8,7 +8,7 @@ type PostCardProps = {
     id: string;
     imageUrl: string;
     caption: string;
-    createdAt: string; // ISO
+    createdAt: string;
     author?: string;
     verified?: boolean;
     likes: number;
@@ -20,15 +20,15 @@ function fmt(dtISO: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(d);
 }
 
-function getOrigin(): string {
-  return typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '';
+function origin() {
+  return typeof window !== 'undefined' ? window.location.origin : '';
 }
-function getUA(): string {
-  const nav = (globalThis as any)?.navigator;
-  return typeof nav?.userAgent === 'string' ? nav.userAgent : '';
+function ua() {
+  const n = (globalThis as any)?.navigator;
+  return typeof n?.userAgent === 'string' ? n.userAgent : '';
 }
-function isMobileUA(): boolean {
-  return /Android|iPhone|iPad|iPod/i.test(getUA());
+function isMobile() {
+  return /Android|iPhone|iPad|iPod/i.test(ua());
 }
 function openUrl(href: string) {
   try {
@@ -58,7 +58,7 @@ export default function PostCard({ post }: PostCardProps) {
     if (liking || alreadyLiked) return;
     setLiking(true);
     const prev = likes;
-    setLikes(prev + 1); // optimistic
+    setLikes(prev + 1);
     try {
       const res = await fetch(`/api/posts/${post.id}/like`, { method: 'POST' });
       if (!res.ok) throw new Error('failed');
@@ -73,35 +73,43 @@ export default function PostCard({ post }: PostCardProps) {
     }
   }
 
-  // Single-button share: URL first (to maximize unfurl) + caption. No files. No `url` param.
+  // Share ONLY the URL (maximizes pre-send card preview). Caption is copied for manual paste.
   function shareAll() {
-    const prettyPage = `${getOrigin()}/p/${post.id}`;
-    const text = [prettyPage, (post.caption || '').trim()].filter(Boolean).join('\n\n');
+    const url = `${origin()}/p/${post.id}`;
 
-    // Try Web Share (text only)
+    // Pre-copy caption so you can paste it after the card appears
     try {
-      if (typeof navigator !== 'undefined' && 'share' in navigator) {
-        (navigator as any).share({ title: 'Budstagram', text }).catch(() => {});
-      } else {
-        // Fallback: WhatsApp Web/App
-        const encoded = encodeURIComponent(text);
-        const appURL = `whatsapp://send?text=${encoded}`;
-        const webURL = `https://wa.me/?text=${encoded}`;
-        if (isMobileUA()) {
-          try { window.location.href = appURL; } catch {}
-          setTimeout(() => { try { window.location.href = webURL; } catch { openUrl(webURL); } }, 900);
+      const caption = (post.caption || '').trim();
+      if (caption) (navigator as any)?.clipboard?.writeText?.(caption);
+    } catch {}
+
+    // Prefer Web Share with URL only
+    if (typeof navigator !== 'undefined' && 'share' in navigator) {
+      (navigator as any).share({ url }).catch(() => {
+        // fallback below
+        const enc = encodeURIComponent(url);
+        if (isMobile()) {
+          try { window.location.href = `whatsapp://send?text=${enc}`; } catch {}
+          setTimeout(() => openUrl(`https://wa.me/?text=${enc}`), 800);
         } else {
-          openUrl(webURL);
+          openUrl(`https://wa.me/?text=${enc}`);
         }
-      }
-    } catch {
-      // Last resort: copy to clipboard
-      try { (navigator as any)?.clipboard?.writeText?.(text); } catch {}
+      });
+      return;
+    }
+
+    // Fallback: WA Web / App with URL only
+    const enc = encodeURIComponent(url);
+    if (isMobile()) {
+      try { window.location.href = `whatsapp://send?text=${enc}`; } catch {}
+      setTimeout(() => openUrl(`https://wa.me/?text=${enc}`), 800);
+    } else {
+      openUrl(`https://wa.me/?text=${enc}`);
     }
   }
 
   return (
-    <article className="rounded-2xl /* overflow-hidden REMOVED */ border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm mb-6">
+    <article className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm mb-6">
       {/* header */}
       <div className="flex items-center gap-3 p-3">
         <div className="h-8 w-8 rounded-full bg-neutral-300 dark:bg-neutral-700 flex items-center justify-center text-xs font-bold">
@@ -153,7 +161,7 @@ export default function PostCard({ post }: PostCardProps) {
             onClick={shareAll}
             className="inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
             type="button"
-            title="Share (URL first + caption)"
+            title="Share link (shows preview card)"
           >
             ⤴ Share
           </button>
