@@ -20,7 +20,6 @@ function fmt(dtISO: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(d);
 }
 
-// Safe UA check
 function isMobileUA(): boolean {
   const ua =
     typeof globalThis !== 'undefined' &&
@@ -31,7 +30,6 @@ function isMobileUA(): boolean {
   return /Android|iPhone|iPad|iPod/i.test(ua);
 }
 
-// Use the real deployed origin (NOT a fake domain)
 function getOrigin(): string {
   return typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '';
 }
@@ -83,16 +81,21 @@ export default function PostCard({ post }: PostCardProps) {
     }
   }
 
-  // Share the pretty page URL; OG on /p/[id] provides image+caption preview
+  // ONE BUTTON: force caption + link in the message; preview image comes from OG at /p/:id
   async function shareAll() {
     const prettyPage = `${getOrigin()}/p/${post.id}`;
-    const text = post.caption?.trim() || '';
+    const text = [post.caption?.trim() || '', prettyPage].filter(Boolean).join('\n\n');
+
+    // Use only `text` (NO `url`) — WA/others drop text when `url` is present.
     if ('share' in navigator) {
-      await (navigator as any).share({ title: 'Budstagram', text, url: prettyPage });
-      return;
+      try {
+        await (navigator as any).share({ title: 'Budstagram', text });
+        return;
+      } catch {}
     }
-    // Fallback: WA web/app
-    const encoded = encodeURIComponent([text, prettyPage].filter(Boolean).join('\n\n'));
+
+    // Fallback: WhatsApp Web/App with prefilled text
+    const encoded = encodeURIComponent(text);
     const href = isMobileUA() ? `whatsapp://send?text=${encoded}` : `https://wa.me/?text=${encoded}`;
     try { window.location.href = href; } catch { window.open(`https://wa.me/?text=${encoded}`, '_blank', 'noopener,noreferrer'); }
   }
@@ -148,7 +151,7 @@ export default function PostCard({ post }: PostCardProps) {
             onClick={shareAll}
             className="inline-flex items-center gap-2 text-sm rounded-full border px-3 py-1 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
             type="button"
-            title="Share (OG preview)"
+            title="Share (caption + link)"
           >
             ⤴ Share
           </button>
